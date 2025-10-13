@@ -244,20 +244,29 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       try {
         const targetPos = new Vec3(x, y, z);
         let lastCheckPos = bot.entity.position.clone();
+        let stuckError: Error | null = null;
 
         const goal = new goals.GoalNear(x, y, z, range);
         const pathfinderPromise = bot.pathfinder.goto(goal);
 
-        // Check progress every second
+        // Check progress every second (after initial 1 second grace period)
+        let checksCount = 0;
         const progressCheckInterval = setInterval(() => {
+          checksCount++;
+          if (checksCount === 1) {
+            // Skip first check to give pathfinding time to start
+            lastCheckPos = bot.entity.position.clone();
+            return;
+          }
+
           const currentPos = bot.entity.position;
           const currentDistance = currentPos.distanceTo(targetPos);
           const progressInLastSecond = lastCheckPos.distanceTo(currentPos);
 
-          if (progressInLastSecond < 2) {
+          if (progressInLastSecond < 1) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
-            throw new Error(
+            stuckError = new Error(
               `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
               `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
               `Target: (${x}, ${y}, ${z}), distance: ${currentDistance.toFixed(1)} blocks.`
@@ -270,8 +279,15 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
         try {
           await pathfinderPromise;
           clearInterval(progressCheckInterval);
+
+          if (stuckError) {
+            throw stuckError;
+          }
         } catch (error) {
           clearInterval(progressCheckInterval);
+          if (stuckError) {
+            throw stuckError;
+          }
           throw error;
         }
 
