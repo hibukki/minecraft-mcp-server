@@ -190,6 +190,7 @@ function createMcpServer(bot: mineflayer.Bot) {
   });
 
   // Register all tool categories
+  registerCraftingTools(server, bot);
   registerPositionTools(server, bot);
   registerInventoryTools(server, bot);
   registerBlockTools(server, bot);
@@ -199,6 +200,80 @@ function createMcpServer(bot: mineflayer.Bot) {
   registerGameStateTools(server, bot);
 
   return server;
+}
+
+// ========== Crafting Tools ==========
+
+function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
+  server.tool(
+    "craft-item",
+    "Craft an item using available materials",
+    {
+      itemName: z
+        .string()
+        .describe(
+          "Name of the item to craft (e.g., 'oak_planks', 'crafting_table', 'wooden_pickaxe')"
+        ),
+      count: z
+        .number()
+        .optional()
+        .describe("Number of items to craft (default: 1)"),
+    },
+    async ({ itemName, count = 1 }): Promise<McpResponse> => {
+      try {
+        const mcData = minecraftData(bot.version);
+        const itemsByName = mcData.itemsByName;
+
+        // Find the item to craft
+        const item = itemsByName[itemName];
+        if (!item) {
+          return createResponse(
+            `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`
+          );
+        }
+
+        // Check if any recipe for this item requires a crafting table
+        const allRecipes = bot.recipesAll(item.id, null, null);
+        if (allRecipes.length === 0) {
+          return createResponse(
+            `No recipe found for ${itemName}.`
+          );
+        }
+
+        const requiresCraftingTable = allRecipes.every((r: any) => r.requiresTable);
+
+        // Only look for crafting table if needed
+        let craftingTable = null;
+        if (requiresCraftingTable) {
+          craftingTable = bot.findBlock({
+            matching: mcData.blocksByName.crafting_table?.id,
+            maxDistance: 32,
+          });
+
+          if (!craftingTable) {
+            return createResponse(
+              `Cannot craft ${itemName}: requires a crafting table, but none found within 32 blocks.`
+            );
+          }
+        }
+
+        // Find recipes we can actually craft with available materials
+        const craftableRecipes = bot.recipesFor(item.id, null, 1, craftingTable);
+        if (craftableRecipes.length === 0) {
+          return createResponse(
+            `Cannot craft ${itemName}: missing required materials.`
+          );
+        }
+
+        // Use the first available recipe and craft
+        const recipe = craftableRecipes[0];
+        await bot.craft(recipe, count, craftingTable || undefined);
+        return createResponse(`Successfully crafted ${count}x ${itemName}`);
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
 }
 
 // ========== Position and Movement Tools ==========
