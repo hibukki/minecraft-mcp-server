@@ -323,6 +323,77 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       });
     }
   );
+
+  server.tool(
+    "pillar-up",
+    "Build a pillar by jumping and placing blocks below",
+    {
+      height: z.number().describe("Number of blocks to pillar up"),
+    },
+    async ({ height }): Promise<McpResponse> => {
+      try {
+        // Check if bot has a placeable block equipped
+        const heldItem = bot.heldItem;
+        if (!heldItem) {
+          return createResponse(
+            "No item equipped. Please equip a block (e.g., cobblestone, dirt) in hand before pillaring up."
+          );
+        }
+
+        const mcData = minecraftData(bot.version);
+
+        // Check if the held item corresponds to a placeable block
+        // Look up by name since item IDs and block IDs are different
+        const blockData = mcData.blocksByName[heldItem.name];
+        if (!blockData) {
+          return createResponse(
+            `Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`
+          );
+        }
+
+        const startY = Math.floor(bot.entity.position.y);
+        let blocksPlaced = 0;
+
+        for (let i = 0; i < height; i++) {
+          // Jump
+          bot.setControlState("jump", true);
+          await new Promise((resolve) => setTimeout(resolve, 100));
+
+          // Wait to be in the air
+          await new Promise((resolve) => setTimeout(resolve, 200));
+
+          // Place block below
+          const belowPos = bot.entity.position.offset(0, -1, 0).floor();
+          const blockBelow = bot.blockAt(belowPos);
+
+          if (blockBelow && blockBelow.name === "air") {
+            try {
+              const referenceBlock = bot.blockAt(belowPos.offset(0, -1, 0));
+              if (referenceBlock && referenceBlock.name !== "air") {
+                await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
+                blocksPlaced++;
+              }
+            } catch (placeError) {
+              log("warn", `Failed to place block: ${formatError(placeError)}`);
+            }
+          }
+
+          bot.setControlState("jump", false);
+
+          // Wait to land
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
+
+        const finalY = Math.floor(bot.entity.position.y);
+        return createResponse(
+          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})`
+        );
+      } catch (error) {
+        bot.setControlState("jump", false);
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
 }
 
 // ========== Inventory Management Tools ==========
@@ -398,8 +469,8 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
     async ({ itemName, destination = "hand" }): Promise<McpResponse> => {
       try {
         const items = bot.inventory.items();
-        const item = items.find((item: any) =>
-          item.name === itemName.toLowerCase()
+        const item = items.find(
+          (item: any) => item.name === itemName.toLowerCase()
         );
 
         if (!item) {
@@ -862,7 +933,9 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
         const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
         if (recipes.length === 0) {
           return createResponse(
-            `No recipe found for ${itemName}. Make sure you have the required materials${craftingTable ? '.' : ' or place a crafting table nearby.'}`
+            `No recipe found for ${itemName}. Make sure you have the required materials${
+              craftingTable ? "." : " or place a crafting table nearby."
+            }`
           );
         }
 
