@@ -136,6 +136,152 @@ class MessageStore {
 // Global message store instance
 const messageStore = new MessageStore();
 
+// ========== Progress Monitoring Helpers ==========
+
+/**
+ * Wraps pathfinding with progress monitoring
+ * Fails fast if bot gets stuck
+ */
+async function gotoAndVerifyProgress(
+  bot: mineflayer.Bot,
+  goal: any,
+  options: {
+    checkIntervalSeconds?: number;
+    minBlocksPerCheck?: number;
+    graceChecks?: number;
+    timeoutSeconds?: number;
+  } = {}
+): Promise<void> {
+  const {
+    checkIntervalSeconds = 1,
+    minBlocksPerCheck = 1,
+    graceChecks = 1,
+    timeoutSeconds = 10,
+  } = options;
+
+  const startPos = bot.entity.position.clone();
+  const startTime = Date.now();
+  let lastCheckPos = startPos.clone();
+  let checksCount = 0;
+  let stuckError: Error | null = null;
+
+  const pathfinderPromise = bot.pathfinder.goto(goal);
+
+  const progressCheck = setInterval(() => {
+    checksCount++;
+
+    // Grace period
+    if (checksCount <= graceChecks) {
+      lastCheckPos = bot.entity.position.clone();
+      return;
+    }
+
+    const currentPos = bot.entity.position;
+    const movedSinceLastCheck = lastCheckPos.distanceTo(currentPos);
+    const elapsedSeconds = (Date.now() - startTime) / 1000;
+
+    // Check timeout
+    if (elapsedSeconds > timeoutSeconds) {
+      const totalMoved = startPos.distanceTo(currentPos);
+      clearInterval(progressCheck);
+      bot.pathfinder.stop();
+      stuckError = new Error(
+        `Pathfinding timeout after ${timeoutSeconds}s. ` +
+        `Moved ${totalMoved.toFixed(1)} blocks total. ` +
+        `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
+        `Progress made - consider calling again if making progress.`
+      );
+      return;
+    }
+
+    // Check if stuck
+    if (movedSinceLastCheck < minBlocksPerCheck) {
+      const totalMoved = startPos.distanceTo(currentPos);
+      clearInterval(progressCheck);
+      bot.pathfinder.stop();
+      stuckError = new Error(
+        `Pathfinding stuck: moved ${movedSinceLastCheck.toFixed(1)} blocks in last ${checkIntervalSeconds}s. ` +
+        `Total progress: ${totalMoved.toFixed(1)} blocks. ` +
+        `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)})`
+      );
+    }
+
+    lastCheckPos = currentPos.clone();
+  }, checkIntervalSeconds * 1000);
+
+  try {
+    await pathfinderPromise;
+    clearInterval(progressCheck);
+    if (stuckError) throw stuckError;
+  } catch (error) {
+    clearInterval(progressCheck);
+    if (stuckError) throw stuckError;
+    throw error;
+  }
+}
+
+/**
+ * Wraps bot.dig with progress monitoring
+ * Checks every few seconds if we're still actively digging
+ */
+async function digWithTimeout(
+  bot: mineflayer.Bot,
+  block: any,
+  timeoutSeconds: number = 20
+): Promise<void> {
+  const digPromise = bot.dig(block);
+  const startTime = Date.now();
+  let lastDigCheck = startTime;
+  let wasDigging = false;
+  let digError: Error | null = null;
+
+  const monitorInterval = setInterval(() => {
+    const now = Date.now();
+    const elapsed = (now - startTime) / 1000;
+
+    // Check if we're currently digging
+    const isDigging = bot.targetDigBlock !== null;
+
+    // If we started digging, remember it
+    if (isDigging) {
+      wasDigging = true;
+      lastDigCheck = now;
+    }
+
+    // If we haven't dug at all after 5 seconds, something is wrong
+    if (!wasDigging && elapsed > 5) {
+      clearInterval(monitorInterval);
+      digError = new Error(`Dig failed to start after 5s. Bot may be stuck or block unreachable.`);
+      return;
+    }
+
+    // If we were digging but stopped for more than 3 seconds, might be done or stuck
+    if (wasDigging && !isDigging && (now - lastDigCheck) > 3000) {
+      // Dig likely completed, let the promise resolve
+      clearInterval(monitorInterval);
+      return;
+    }
+
+    // Overall timeout
+    if (elapsed > timeoutSeconds) {
+      clearInterval(monitorInterval);
+      digError = new Error(
+        `Dig timeout after ${timeoutSeconds}s. Block may be too hard or bot may need better tools.`
+      );
+    }
+  }, 500);
+
+  try {
+    await digPromise;
+    clearInterval(monitorInterval);
+    if (digError) throw digError;
+  } catch (error) {
+    clearInterval(monitorInterval);
+    if (digError) throw digError;
+    throw error;
+  }
+}
+
 // ========== Bot Setup ==========
 
 function setupBot(argv: any): mineflayer.Bot {
@@ -597,14 +743,14 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
 
           if (referenceBlock && referenceBlock.name !== "air") {
             if (!bot.canSeeBlock(referenceBlock)) {
-              // Try to move closer to see the block
+              // Try to move closer to see the block - with timeout & progress monitoring
               const goal = new goals.GoalNear(
                 referencePos.x,
                 referencePos.y,
                 referencePos.z,
                 2
               );
-              await bot.pathfinder.goto(goal);
+              await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
             }
 
             await bot.lookAt(placePos, true);
@@ -658,9 +804,9 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         const heldItem = bot.heldItem;
 
         if (!bot.canDigBlock(block) || !bot.canSeeBlock(block)) {
-          // Try to move closer to dig the block
+          // Try to move closer to dig the block - with timeout & progress monitoring
           const goal = new goals.GoalNear(x, y, z, 2);
-          await bot.pathfinder.goto(goal);
+          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
 
           // Re-equip the tool after pathfinding (pathfinder may change held item)
           if (heldItem) {
@@ -668,7 +814,8 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           }
         }
 
-        await bot.dig(block);
+        // Dig with timeout
+        await digWithTimeout(bot, block);
 
         return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
       } catch (error) {
