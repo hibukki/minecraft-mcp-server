@@ -102,6 +102,43 @@ Once connected to a Minecraft server, Claude can use these commands:
 ### Game State
 - `detect-gamemode` - Detect the gamemode on game
 
+## Development Setup
+
+To clone and develop this project locally:
+
+```bash
+# Clone with submodules
+git clone --recurse-submodules https://github.com/hibukki/minecraft-mcp-server.git
+cd minecraft-mcp-server
+
+# If you already cloned without --recurse-submodules:
+git submodule update --init --recursive
+
+# Install dependencies in main repo
+npm install
+
+# Install dependencies in mineflayer submodule
+cd mineflayer
+npm install
+cd ..
+
+# Build the project
+npm run build
+
+# The bot is now ready to use!
+```
+
+### Mineflayer Modifications
+
+This fork uses a modified version of [Mineflayer](https://github.com/PrismarineJS/mineflayer).
+Our fork is located at [hibukki/mineflayer](https://github.com/hibukki/mineflayer) and includes:
+
+- **Reduced timeout**: Default timeout reduced from 20s to 2s for faster failure detection
+- **Crafting table distance check**: Clear error messages when crafting table is out of reach
+- **Progress monitoring helpers**: New `gotoAndVerifyProgress` and `digWithTimeout` functions for better timeout handling
+
+These modifications improve error handling and make the bot more responsive when operations fail.
+
 ## Contributing
 
 This application was made in just two days, and the code is really simple and straightforward. All refactoring commits, functional and test contributions, issues and discussion are greatly appreciated!
