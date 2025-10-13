@@ -3,13 +3,13 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import mineflayer from 'mineflayer';
-import pathfinderPkg from 'mineflayer-pathfinder';
+import mineflayer from "mineflayer";
+import pathfinderPkg from "mineflayer-pathfinder";
 const { pathfinder, Movements, goals } = pathfinderPkg;
-import { Vec3 } from 'vec3';
-import minecraftData from 'minecraft-data';
-import yargs from 'yargs';
-import { hideBin } from 'yargs/helpers';
+import { Vec3 } from "vec3";
+import minecraftData from "minecraft-data";
+import yargs from "yargs";
+import { hideBin } from "yargs/helpers";
 
 // ========== Type Definitions ==========
 
@@ -38,8 +38,8 @@ interface FaceOption {
   vector: Vec3;
 }
 
-type Direction = 'forward' | 'back' | 'left' | 'right';
-type FaceDirection = 'up' | 'down' | 'north' | 'south' | 'east' | 'west';
+type Direction = "forward" | "back" | "left" | "right";
+type FaceDirection = "up" | "down" | "north" | "south" | "east" | "west";
 
 interface StoredMessage {
   timestamp: number;
@@ -47,34 +47,33 @@ interface StoredMessage {
   content: string;
 }
 
-
 // ========== Command Line Argument Parsing ==========
 
 function parseCommandLineArgs() {
   return yargs(hideBin(process.argv))
-    .option('host', {
-      type: 'string',
-      description: 'Minecraft server host',
-      default: 'localhost'
+    .option("host", {
+      type: "string",
+      description: "Minecraft server host",
+      default: "localhost",
     })
-    .option('port', {
-      type: 'number',
-      description: 'Minecraft server port',
-      default: 25565
+    .option("port", {
+      type: "number",
+      description: "Minecraft server port",
+      default: 25565,
     })
-    .option('username', {
-      type: 'string',
-      description: 'Bot username',
-      default: 'LLMBot'
+    .option("username", {
+      type: "string",
+      description: "Bot username",
+      default: "LLMBot",
     })
     .help()
-    .alias('help', 'h')
+    .alias("help", "h")
     .parseSync();
 }
 
 // ========== Logging and Responding ==========
 
-type LogLevel = 'info' | 'warn' | 'error';
+type LogLevel = "info" | "warn" | "error";
 
 function log(level: LogLevel, message: string) {
   const timestamp = new Date().toISOString();
@@ -83,16 +82,16 @@ function log(level: LogLevel, message: string) {
 
 function createResponse(text: string): McpResponse {
   return {
-    content: [{ type: "text", text }]
+    content: [{ type: "text", text }],
   };
 }
 
 function createErrorResponse(error: Error | string): McpResponse {
   const errorMessage = formatError(error);
-  log('error', errorMessage);
+  log("error", errorMessage);
   return {
     content: [{ type: "text", text: `Failed: ${errorMessage}` }],
-    isError: true
+    isError: true,
   };
 }
 
@@ -119,7 +118,7 @@ class MessageStore {
     const message: StoredMessage = {
       timestamp: Date.now(),
       username,
-      content
+      content,
     };
 
     this.messages.push(message);
@@ -152,30 +151,32 @@ function setupBot(argv: any): mineflayer.Bot {
   const bot = mineflayer.createBot(botOptions);
 
   // Set up the bot when it spawns
-  bot.once('spawn', async () => {
-
+  bot.once("spawn", async () => {
     // Set up pathfinder movements
     const mcData = minecraftData(bot.version);
     const defaultMove = new Movements(bot, mcData);
     bot.pathfinder.setMovements(defaultMove);
 
-    bot.chat('LLM-powered bot ready to receive instructions!');
-    log('info', `Server started and connected successfully. Bot: ${argv.username} on ${argv.host}:${argv.port}`);
+    bot.chat("LLM-powered bot ready to receive instructions!");
+    log(
+      "info",
+      `Server started and connected successfully. Bot: ${argv.username} on ${argv.host}:${argv.port}`
+    );
   });
 
   // Register common event handlers
-  bot.on('chat', (username, message) => {
+  bot.on("chat", (username, message) => {
     if (username === bot.username) return;
     messageStore.addMessage(username, message);
   });
 
-  bot.on('kicked', (reason) => {
-    log('error', `Bot was kicked: ${formatError(reason)}`);
+  bot.on("kicked", (reason) => {
+    log("error", `Bot was kicked: ${formatError(reason)}`);
     bot.quit();
   });
 
-  bot.on('error', (err) => {
-    log('error', `Bot error: ${formatError(err)}`);
+  bot.on("error", (err) => {
+    log("error", `Bot error: ${formatError(err)}`);
   });
 
   return bot;
@@ -186,10 +187,11 @@ function setupBot(argv: any): mineflayer.Bot {
 function createMcpServer(bot: mineflayer.Bot) {
   const server = new McpServer({
     name: "minecraft-mcp-server",
-    version: "1.2.0"
+    version: "1.2.0",
   });
 
   // Register all tool categories
+  registerCraftingTools(server, bot);
   registerPositionTools(server, bot);
   registerInventoryTools(server, bot);
   registerBlockTools(server, bot);
@@ -197,7 +199,6 @@ function createMcpServer(bot: mineflayer.Bot) {
   registerChatTools(server, bot);
   registerFlightTools(server, bot);
   registerGameStateTools(server, bot);
-  registerCraftingTools(server, bot);
 
   return server;
 }
@@ -215,10 +216,12 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
         const pos = {
           x: Math.floor(position.x),
           y: Math.floor(position.y),
-          z: Math.floor(position.z)
+          z: Math.floor(position.z),
         };
 
-        return createResponse(`Current position: (${pos.x}, ${pos.y}, ${pos.z})`);
+        return createResponse(
+          `Current position: (${pos.x}, ${pos.y}, ${pos.z})`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -232,14 +235,19 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
-      range: z.number().optional().describe("How close to get to the target (default: 1)")
+      range: z
+        .number()
+        .optional()
+        .describe("How close to get to the target (default: 1)"),
     },
     async ({ x, y, z, range = 1 }): Promise<McpResponse> => {
       try {
         const goal = new goals.GoalNear(x, y, z, range);
         await bot.pathfinder.goto(goal);
 
-        return createResponse(`Successfully moved to position near (${x}, ${y}, ${z})`);
+        return createResponse(
+          `Successfully moved to position near (${x}, ${y}, ${z})`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -271,8 +279,8 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
     {},
     async (): Promise<McpResponse> => {
       try {
-        bot.setControlState('jump', true);
-        setTimeout(() => bot.setControlState('jump', false), 250);
+        bot.setControlState("jump", true);
+        setTimeout(() => bot.setControlState("jump", false), 250);
 
         return createResponse("Successfully jumped");
       } catch (error) {
@@ -285,10 +293,21 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
     "move-in-direction",
     "Move the bot in a specific direction for a duration",
     {
-      direction: z.enum(['forward', 'back', 'left', 'right']).describe("Direction to move"),
-      duration: z.number().optional().describe("Duration in milliseconds (default: 1000)")
+      direction: z
+        .enum(["forward", "back", "left", "right"])
+        .describe("Direction to move"),
+      duration: z
+        .number()
+        .optional()
+        .describe("Duration in milliseconds (default: 1000)"),
     },
-    async ({ direction, duration = 1000 }: { direction: Direction, duration?: number }): Promise<McpResponse> => {
+    async ({
+      direction,
+      duration = 1000,
+    }: {
+      direction: Direction;
+      duration?: number;
+    }): Promise<McpResponse> => {
       return new Promise((resolve) => {
         try {
           bot.setControlState(direction, true);
@@ -319,7 +338,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
         const itemList: InventoryItem[] = items.map((item: any) => ({
           name: item.name,
           count: item.count,
-          slot: item.slot
+          slot: item.slot,
         }));
 
         if (items.length === 0) {
@@ -327,7 +346,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
         }
 
         let inventoryText = `Found ${items.length} items in inventory:\n\n`;
-        itemList.forEach(item => {
+        itemList.forEach((item) => {
           inventoryText += `- ${item.name} (x${item.count}) in slot ${item.slot}\n`;
         });
 
@@ -342,7 +361,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
     "find-item",
     "Find a specific item in the bot's inventory",
     {
-      nameOrType: z.string().describe("Name or type of item to find")
+      nameOrType: z.string().describe("Name or type of item to find"),
     },
     async ({ nameOrType }): Promise<McpResponse> => {
       try {
@@ -352,9 +371,13 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
         );
 
         if (item) {
-          return createResponse(`Found ${item.count} ${item.name} in inventory (slot ${item.slot})`);
+          return createResponse(
+            `Found ${item.count} ${item.name} in inventory (slot ${item.slot})`
+          );
         } else {
-          return createResponse(`Couldn't find any item matching '${nameOrType}' in inventory`);
+          return createResponse(
+            `Couldn't find any item matching '${nameOrType}' in inventory`
+          );
         }
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -367,17 +390,22 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
     "Equip a specific item",
     {
       itemName: z.string().describe("Name of the item to equip"),
-      destination: z.string().optional().describe("Where to equip the item (default: 'hand')")
+      destination: z
+        .string()
+        .optional()
+        .describe("Where to equip the item (default: 'hand')"),
     },
-    async ({ itemName, destination = 'hand' }): Promise<McpResponse> => {
+    async ({ itemName, destination = "hand" }): Promise<McpResponse> => {
       try {
         const items = bot.inventory.items();
         const item = items.find((item: any) =>
-          item.name.includes(itemName.toLowerCase())
+          item.name === itemName.toLowerCase()
         );
 
         if (!item) {
-          return createResponse(`Couldn't find any item matching '${itemName}' in inventory`);
+          return createResponse(
+            `Couldn't find any item matching '${itemName}' in inventory`
+          );
         }
 
         await bot.equip(item, destination as mineflayer.EquipmentDestination);
@@ -399,30 +427,49 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
-      faceDirection: z.enum(['up', 'down', 'north', 'south', 'east', 'west']).optional().describe("Direction to place against (default: 'down')")
+      faceDirection: z
+        .enum(["up", "down", "north", "south", "east", "west"])
+        .optional()
+        .describe("Direction to place against (default: 'down')"),
     },
-    async ({ x, y, z, faceDirection = 'down' }: { x: number, y: number, z: number, faceDirection?: FaceDirection }): Promise<McpResponse> => {
+    async ({
+      x,
+      y,
+      z,
+      faceDirection = "down",
+    }: {
+      x: number;
+      y: number;
+      z: number;
+      faceDirection?: FaceDirection;
+    }): Promise<McpResponse> => {
       try {
         const placePos = new Vec3(x, y, z);
         const blockAtPos = bot.blockAt(placePos);
-        if (blockAtPos && blockAtPos.name !== 'air') {
-          return createResponse(`There's already a block (${blockAtPos.name}) at (${x}, ${y}, ${z})`);
+        if (blockAtPos && blockAtPos.name !== "air") {
+          return createResponse(
+            `There's already a block (${blockAtPos.name}) at (${x}, ${y}, ${z})`
+          );
         }
 
         const possibleFaces: FaceOption[] = [
-          { direction: 'down', vector: new Vec3(0, -1, 0) },
-          { direction: 'north', vector: new Vec3(0, 0, -1) },
-          { direction: 'south', vector: new Vec3(0, 0, 1) },
-          { direction: 'east', vector: new Vec3(1, 0, 0) },
-          { direction: 'west', vector: new Vec3(-1, 0, 0) },
-          { direction: 'up', vector: new Vec3(0, 1, 0) }
+          { direction: "down", vector: new Vec3(0, -1, 0) },
+          { direction: "north", vector: new Vec3(0, 0, -1) },
+          { direction: "south", vector: new Vec3(0, 0, 1) },
+          { direction: "east", vector: new Vec3(1, 0, 0) },
+          { direction: "west", vector: new Vec3(-1, 0, 0) },
+          { direction: "up", vector: new Vec3(0, 1, 0) },
         ];
 
         // Prioritize the requested face direction
-        if (faceDirection !== 'down') {
-          const specificFace = possibleFaces.find(face => face.direction === faceDirection);
+        if (faceDirection !== "down") {
+          const specificFace = possibleFaces.find(
+            (face) => face.direction === faceDirection
+          );
           if (specificFace) {
-            possibleFaces.unshift(possibleFaces.splice(possibleFaces.indexOf(specificFace), 1)[0]);
+            possibleFaces.unshift(
+              possibleFaces.splice(possibleFaces.indexOf(specificFace), 1)[0]
+            );
           }
         }
 
@@ -431,10 +478,15 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           const referencePos = placePos.plus(face.vector);
           const referenceBlock = bot.blockAt(referencePos);
 
-          if (referenceBlock && referenceBlock.name !== 'air') {
+          if (referenceBlock && referenceBlock.name !== "air") {
             if (!bot.canSeeBlock(referenceBlock)) {
               // Try to move closer to see the block
-              const goal = new goals.GoalNear(referencePos.x, referencePos.y, referencePos.z, 2);
+              const goal = new goals.GoalNear(
+                referencePos.x,
+                referencePos.y,
+                referencePos.z,
+                2
+              );
               await bot.pathfinder.goto(goal);
             }
 
@@ -442,15 +494,24 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
 
             try {
               await bot.placeBlock(referenceBlock, face.vector.scaled(-1));
-              return createResponse(`Placed block at (${x}, ${y}, ${z}) using ${face.direction} face`);
+              return createResponse(
+                `Placed block at (${x}, ${y}, ${z}) using ${face.direction} face`
+              );
             } catch (placeError) {
-              log('warn', `Failed to place using ${face.direction} face: ${formatError(placeError)}`);
+              log(
+                "warn",
+                `Failed to place using ${face.direction} face: ${formatError(
+                  placeError
+                )}`
+              );
               continue;
             }
           }
         }
 
-        return createResponse(`Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found`);
+        return createResponse(
+          `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -470,14 +531,24 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         const blockPos = new Vec3(x, y, z);
         const block = bot.blockAt(blockPos);
 
-        if (!block || block.name === 'air') {
-          return createResponse(`No block found at position (${x}, ${y}, ${z})`);
+        if (!block || block.name === "air") {
+          return createResponse(
+            `No block found at position (${x}, ${y}, ${z})`
+          );
         }
+
+        // Remember the currently held item before pathfinding
+        const heldItem = bot.heldItem;
 
         if (!bot.canDigBlock(block) || !bot.canSeeBlock(block)) {
           // Try to move closer to dig the block
           const goal = new goals.GoalNear(x, y, z, 2);
           await bot.pathfinder.goto(goal);
+
+          // Re-equip the tool after pathfinding (pathfinder may change held item)
+          if (heldItem) {
+            await bot.equip(heldItem, "hand");
+          }
         }
 
         await bot.dig(block);
@@ -503,10 +574,14 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         const block = bot.blockAt(blockPos);
 
         if (!block) {
-          return createResponse(`No block information found at position (${x}, ${y}, ${z})`);
+          return createResponse(
+            `No block information found at position (${x}, ${y}, ${z})`
+          );
         }
 
-        return createResponse(`Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z})`);
+        return createResponse(
+          `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z})`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -518,7 +593,10 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
     "Find the nearest block of a specific type",
     {
       blockType: z.string().describe("Type of block to find"),
-      maxDistance: z.number().optional().describe("Maximum search distance (default: 16)")
+      maxDistance: z
+        .number()
+        .optional()
+        .describe("Maximum search distance (default: 16)"),
     },
     async ({ blockType, maxDistance = 16 }): Promise<McpResponse> => {
       try {
@@ -533,14 +611,18 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
 
         const block = bot.findBlock({
           matching: blockId,
-          maxDistance: maxDistance
+          maxDistance: maxDistance,
         });
 
         if (!block) {
-          return createResponse(`No ${blockType} found within ${maxDistance} blocks`);
+          return createResponse(
+            `No ${blockType} found within ${maxDistance} blocks`
+          );
         }
 
-        return createResponse(`Found ${blockType} at position (${block.position.x}, ${block.position.y}, ${block.position.z})`);
+        return createResponse(
+          `Found ${blockType} at position (${block.position.x}, ${block.position.y}, ${block.position.z})`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -555,25 +637,42 @@ function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
     "find-entity",
     "Find the nearest entity of a specific type",
     {
-      type: z.string().optional().describe("Type of entity to find (empty for any entity)"),
-      maxDistance: z.number().optional().describe("Maximum search distance (default: 16)")
+      type: z
+        .string()
+        .optional()
+        .describe("Type of entity to find (empty for any entity)"),
+      maxDistance: z
+        .number()
+        .optional()
+        .describe("Maximum search distance (default: 16)"),
     },
-    async ({ type = '', maxDistance = 16 }): Promise<McpResponse> => {
+    async ({ type = "", maxDistance = 16 }): Promise<McpResponse> => {
       try {
         const entityFilter = (entity: any) => {
           if (!type) return true;
-          if (type === 'player') return entity.type === 'player';
-          if (type === 'mob') return entity.type === 'mob';
+          if (type === "player") return entity.type === "player";
+          if (type === "mob") return entity.type === "mob";
           return entity.name && entity.name.includes(type.toLowerCase());
         };
 
         const entity = bot.nearestEntity(entityFilter);
 
-        if (!entity || bot.entity.position.distanceTo(entity.position) > maxDistance) {
-          return createResponse(`No ${type || 'entity'} found within ${maxDistance} blocks`);
+        if (
+          !entity ||
+          bot.entity.position.distanceTo(entity.position) > maxDistance
+        ) {
+          return createResponse(
+            `No ${type || "entity"} found within ${maxDistance} blocks`
+          );
         }
 
-        return createResponse(`Found ${entity.name || (entity as any).username || entity.type} at position (${Math.floor(entity.position.x)}, ${Math.floor(entity.position.y)}, ${Math.floor(entity.position.z)})`);
+        return createResponse(
+          `Found ${
+            entity.name || (entity as any).username || entity.type
+          } at position (${Math.floor(entity.position.x)}, ${Math.floor(
+            entity.position.y
+          )}, ${Math.floor(entity.position.z)})`
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -588,7 +687,7 @@ function registerChatTools(server: McpServer, bot: mineflayer.Bot) {
     "send-chat",
     "Send a chat message in-game",
     {
-      message: z.string().describe("Message to send in chat")
+      message: z.string().describe("Message to send in chat"),
     },
     async ({ message }): Promise<McpResponse> => {
       try {
@@ -604,7 +703,12 @@ function registerChatTools(server: McpServer, bot: mineflayer.Bot) {
     "read-chat",
     "Get recent chat messages from players",
     {
-      count: z.number().optional().describe("Number of recent messages to retrieve (default: 10, max: 100)")
+      count: z
+        .number()
+        .optional()
+        .describe(
+          "Number of recent messages to retrieve (default: 10, max: 100)"
+        ),
     },
     async ({ count = 10 }): Promise<McpResponse> => {
       try {
@@ -618,7 +722,9 @@ function registerChatTools(server: McpServer, bot: mineflayer.Bot) {
         let output = `Found ${messages.length} chat message(s):\n\n`;
         messages.forEach((msg, index) => {
           const timestamp = new Date(msg.timestamp).toISOString();
-          output += `${index + 1}. ${timestamp} - ${msg.username}: ${msg.content}\n`;
+          output += `${index + 1}. ${timestamp} - ${msg.username}: ${
+            msg.content
+          }\n`;
         });
 
         return createResponse(output);
@@ -638,7 +744,7 @@ function registerFlightTools(server: McpServer, bot: mineflayer.Bot) {
     {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate")
+      z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }): Promise<McpResponse> => {
       if (!bot.creative) {
@@ -659,17 +765,25 @@ function registerFlightTools(server: McpServer, bot: mineflayer.Bot) {
 
         await createCancellableFlightOperation(bot, destination, controller);
 
-        return createResponse(`Successfully flew to position (${x}, ${y}, ${z}).`);
+        return createResponse(
+          `Successfully flew to position (${x}, ${y}, ${z}).`
+        );
       } catch (error) {
         if (controller.signal.aborted) {
           const currentPosAfterTimeout = bot.entity.position;
           return createErrorResponse(
-            `Flight timed out after ${FLIGHT_TIMEOUT_MS / 1000} seconds. The destination may be unreachable. ` +
-            `Current position: (${Math.floor(currentPosAfterTimeout.x)}, ${Math.floor(currentPosAfterTimeout.y)}, ${Math.floor(currentPosAfterTimeout.z)})`
+            `Flight timed out after ${
+              FLIGHT_TIMEOUT_MS / 1000
+            } seconds. The destination may be unreachable. ` +
+              `Current position: (${Math.floor(
+                currentPosAfterTimeout.x
+              )}, ${Math.floor(currentPosAfterTimeout.y)}, ${Math.floor(
+                currentPosAfterTimeout.z
+              )})`
           );
         }
 
-        log('error', `Flight error: ${formatError(error)}`);
+        log("error", `Flight error: ${formatError(error)}`);
         return createErrorResponse(error as Error);
       } finally {
         clearTimeout(timeoutId);
@@ -687,13 +801,14 @@ function createCancellableFlightOperation(
   return new Promise((resolve, reject) => {
     let aborted = false;
 
-    controller.signal.addEventListener('abort', () => {
+    controller.signal.addEventListener("abort", () => {
       aborted = true;
       bot.creative.stopFlying();
       reject(new Error("Flight operation cancelled"));
     });
 
-    bot.creative.flyTo(destination)
+    bot.creative
+      .flyTo(destination)
       .then(() => {
         if (!aborted) {
           resolve(true);
@@ -714,8 +829,15 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
     "craft-item",
     "Craft an item using available materials",
     {
-      itemName: z.string().describe("Name of the item to craft (e.g., 'oak_planks', 'crafting_table', 'wooden_pickaxe')"),
-      count: z.number().optional().describe("Number of items to craft (default: 1)")
+      itemName: z
+        .string()
+        .describe(
+          "Name of the item to craft (e.g., 'oak_planks', 'crafting_table', 'wooden_pickaxe')"
+        ),
+      count: z
+        .number()
+        .optional()
+        .describe("Number of items to craft (default: 1)"),
     },
     async ({ itemName, count = 1 }): Promise<McpResponse> => {
       try {
@@ -725,20 +847,24 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
         // Find the item to craft
         const item = itemsByName[itemName];
         if (!item) {
-          return createResponse(`Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`);
-        }
-
-        // Find the recipe for this item
-        const recipes = bot.recipesFor(item.id, null, 1, null);
-        if (recipes.length === 0) {
-          return createResponse(`No recipe found for ${itemName}. Make sure you have the required materials.`);
+          return createResponse(
+            `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`
+          );
         }
 
         // Find a crafting table if needed (for recipes that require it)
         const craftingTable = bot.findBlock({
           matching: mcData.blocksByName.crafting_table?.id,
-          maxDistance: 32
+          maxDistance: 32,
         });
+
+        // Find the recipe for this item
+        const recipes = bot.recipesFor(item.id, null, 1, craftingTable);
+        if (recipes.length === 0) {
+          return createResponse(
+            `No recipe found for ${itemName}. Make sure you have the required materials${craftingTable ? '.' : ' or place a crafting table nearby.'}`
+          );
+        }
 
         // Use the first available recipe
         const recipe = recipes[0];
@@ -748,13 +874,20 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
           await bot.craft(recipe, count, craftingTable || undefined);
           return createResponse(`Successfully crafted ${count}x ${itemName}`);
         } catch (craftError) {
-          const errorMsg = craftError instanceof Error ? craftError.message : String(craftError);
+          const errorMsg =
+            craftError instanceof Error
+              ? craftError.message
+              : String(craftError);
           // Provide helpful error messages
-          if (errorMsg.includes('recipe')) {
-            return createResponse(`Cannot craft ${itemName}: Recipe not found or missing required materials. You may need a crafting table nearby.`);
+          if (errorMsg.includes("recipe")) {
+            return createResponse(
+              `Cannot craft ${itemName}: Recipe not found or missing required materials. You may need a crafting table nearby.`
+            );
           }
-          if (errorMsg.includes('material')) {
-            return createResponse(`Cannot craft ${itemName}: Missing required materials.`);
+          if (errorMsg.includes("material")) {
+            return createResponse(
+              `Cannot craft ${itemName}: Missing required materials.`
+            );
           }
           return createErrorResponse(craftError as Error);
         }
@@ -798,9 +931,9 @@ async function main() {
     const server = createMcpServer(bot);
 
     // Handle stdin end - this will detect when MCP Client is closed
-    process.stdin.on('end', () => {
+    process.stdin.on("end", () => {
       if (bot) bot.quit();
-      log('info', 'MCP Client has disconnected. Shutting down...');
+      log("info", "MCP Client has disconnected. Shutting down...");
       process.exit(0);
     });
 
@@ -809,13 +942,13 @@ async function main() {
     await server.connect(transport);
   } catch (error) {
     if (bot) bot.quit();
-    log('error', `Failed to start server: ${formatError(error)}`);
+    log("error", `Failed to start server: ${formatError(error)}`);
     process.exit(1);
   }
 }
 
 // Start the application
 main().catch((error) => {
-  log('error', `Fatal error in main(): ${formatError(error)}`);
+  log("error", `Fatal error in main(): ${formatError(error)}`);
   process.exit(1);
 });
