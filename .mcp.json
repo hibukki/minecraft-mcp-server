@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "minecraft": {
+      "command": "npx",
+      "args": [
+        "-y",
+        ".",
+        "--host",
+        "51.13.91.243",
+        "--port",
+        "25566",
+        "--username",
+        "ClaudeCoderBot"
+      ]
+    }
+  }
+}
