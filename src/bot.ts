@@ -242,8 +242,38 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
     },
     async ({ x, y, z, range = 1 }): Promise<McpResponse> => {
       try {
+        const targetPos = new Vec3(x, y, z);
+        let lastCheckPos = bot.entity.position.clone();
+
         const goal = new goals.GoalNear(x, y, z, range);
-        await bot.pathfinder.goto(goal);
+        const pathfinderPromise = bot.pathfinder.goto(goal);
+
+        // Check progress every second
+        const progressCheckInterval = setInterval(() => {
+          const currentPos = bot.entity.position;
+          const currentDistance = currentPos.distanceTo(targetPos);
+          const progressInLastSecond = lastCheckPos.distanceTo(currentPos);
+
+          if (progressInLastSecond < 2) {
+            clearInterval(progressCheckInterval);
+            bot.pathfinder.stop();
+            throw new Error(
+              `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
+              `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
+              `Target: (${x}, ${y}, ${z}), distance: ${currentDistance.toFixed(1)} blocks.`
+            );
+          }
+
+          lastCheckPos = currentPos.clone();
+        }, 1000);
+
+        try {
+          await pathfinderPromise;
+          clearInterval(progressCheckInterval);
+        } catch (error) {
+          clearInterval(progressCheckInterval);
+          throw error;
+        }
 
         return createResponse(
           `Successfully moved to position near (${x}, ${y}, ${z})`
