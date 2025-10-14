@@ -1133,6 +1133,9 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Remember the currently held item before pathfinding
         const heldItem = bot.heldItem;
 
+        // Check light level before digging
+        const lightLevel = block.light;
+
         if (!bot.canDigBlock(block) || !bot.canSeeBlock(block)) {
           // Try to move closer to dig the block - with timeout & progress monitoring
           const goal = new goals.GoalNear(x, y, z, 2);
@@ -1165,7 +1168,12 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           }
         }
 
-        return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
+        let response = `Dug ${block.name} at (${x}, ${y}, ${z})`;
+        // Add light level warning if it's dark
+        if (lightLevel !== undefined && lightLevel < 8) {
+          response += ` (fyi: block lighting was ${lightLevel}/15)`;
+        }
+        return createResponse(response);
       } catch (error) {
         return createErrorResponse(error as Error);
       }
