@@ -262,7 +262,7 @@ async function digWithTimeout(
       const toolName = heldItem ? heldItem.name : "no tool";
       digError = new Error(
         `Digging is very slow (${elapsed.toFixed(1)}s). Block: ${block.name}. ` +
-        `Using: ${toolName}. Wrong tool? Try using a pickaxe for stone/ore, axe for wood, or shovel for dirt.`
+        `Using: ${toolName}. Wrong tool?`
       );
       return;
     }
