@@ -227,7 +227,7 @@ async function gotoAndVerifyProgress(
 async function digWithTimeout(
   bot: mineflayer.Bot,
   block: any,
-  timeoutSeconds: number = 3
+  timeoutSeconds: number = 3 // Sometimes the character is using the wrong tool or is stuck on the way to the block, in which case a short timeout is helpful. If trying to mine a block that is known to take a long time - then in that unusual situation it is ok to send a longer number here on purpose
 ): Promise<void> {
   const digPromise = bot.dig(block);
   const startTime = Date.now();
