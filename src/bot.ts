@@ -349,6 +349,76 @@ function createMcpServer(bot: mineflayer.Bot) {
   return server;
 }
 
+// ========== Crafting Tools ==========
+
+function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
+  server.tool(
+    "craft-item",
+    "Craft an item using available materials",
+    {
+      itemName: z
+        .string()
+        .describe(
+          "Name of the item to craft (e.g., 'oak_planks', 'crafting_table', 'wooden_pickaxe')"
+        ),
+      count: z
+        .number()
+        .optional()
+        .describe("Number of items to craft (default: 1)"),
+    },
+    async ({ itemName, count = 1 }): Promise<McpResponse> => {
+      try {
+        const mcData = minecraftData(bot.version);
+        const itemsByName = mcData.itemsByName;
+
+        const item = itemsByName[itemName];
+        if (!item) {
+          return createResponse(
+            `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`
+          );
+        }
+
+        const allRecipes = bot.recipesAll(item.id, null, null);
+        if (allRecipes.length === 0) {
+          return createResponse(
+            `No recipe found for ${itemName}.`
+          );
+        }
+
+        const requiresCraftingTable = allRecipes.every((r: any) => r.requiresTable);
+
+        let maybeCraftingTable = null;
+
+        if (requiresCraftingTable) {
+          maybeCraftingTable = bot.findBlock({
+            matching: mcData.blocksByName.crafting_table?.id,
+            maxDistance: 32,
+          });
+
+          if (!maybeCraftingTable) {
+            return createResponse(
+              `Cannot craft ${itemName}: requires a crafting table, but none found within 32 blocks.`
+            );
+          }
+        }
+
+        const craftableRecipes = bot.recipesFor(item.id, null, 1, maybeCraftingTable);
+        if (craftableRecipes.length === 0) {
+          return createResponse(
+            `Cannot craft ${itemName}: missing required materials.`
+          );
+        }
+
+        const recipe = craftableRecipes[0];
+        await bot.craft(recipe, count, maybeCraftingTable || undefined);
+        return createResponse(`Successfully crafted ${count}x ${itemName}`);
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+}
+
 // ========== Position and Movement Tools ==========
 
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
