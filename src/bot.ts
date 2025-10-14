@@ -545,11 +545,41 @@ function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
         log("info", `Waiting ${smeltTime / 1000}s for smelting to complete...`);
         await new Promise(resolve => setTimeout(resolve, smeltTime));
 
-        // Take output
-        await furnaceBlock.takeOutput();
-        furnaceBlock.close();
+        // Take output if available
+        const output = furnaceBlock.outputItem();
+        if (output) {
+          await furnaceBlock.takeOutput();
+          furnaceBlock.close();
+          return createResponse(`Successfully smelted ${count}x ${itemName} using ${fuel.name} as fuel`);
+        } else {
+          // Check full furnace state to give detailed error
+          const inputStillThere = furnaceBlock.inputItem();
+          const fuelStillThere = furnaceBlock.fuelItem();
+          const progress = (furnaceBlock as any).progress;
+          const progressSeconds = (furnaceBlock as any).progressSeconds;
+          const fuelRemaining = (furnaceBlock as any).fuel;
+          const fuelSeconds = (furnaceBlock as any).fuelSeconds;
+          furnaceBlock.close();
 
-        return createResponse(`Successfully smelted ${count}x ${itemName} using ${fuel.name} as fuel`);
+          let errorMsg = `Smelting failed: No output found after waiting ${smeltTime / 1000}s.\n`;
+          errorMsg += `Furnace state:\n`;
+          errorMsg += `  Input: ${inputStillThere ? `${inputStillThere.count}x ${inputStillThere.name}` : 'empty'}\n`;
+          errorMsg += `  Fuel: ${fuelStillThere ? `${fuelStillThere.count}x ${fuelStillThere.name}` : 'empty'}\n`;
+          errorMsg += `  Output: empty\n`;
+          errorMsg += `  Progress: ${progress !== null ? (progress * 100).toFixed(1) : 'unknown'}%`;
+          if (progressSeconds !== null) {
+            errorMsg += ` (${progressSeconds.toFixed(1)}s remaining)`;
+          }
+          errorMsg += `\n`;
+          errorMsg += `  Fuel: ${fuelRemaining !== null ? (fuelRemaining * 100).toFixed(1) : 'unknown'}%`;
+          if (fuelSeconds !== null) {
+            errorMsg += ` (${fuelSeconds.toFixed(1)}s remaining)`;
+          }
+          errorMsg += `\n`;
+          errorMsg += `Likely causes: (1) Fuel ran out mid-smelt, (2) Need to wait longer, (3) Items already taken.`;
+
+          return createResponse(errorMsg);
+        }
       } catch (error) {
         return createErrorResponse(error as Error);
       }
