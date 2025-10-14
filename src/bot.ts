@@ -879,6 +879,14 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           // Check if we actually moved up
           const afterY = Math.floor(bot.entity.position.y);
           if (afterY <= beforeY && i < height - 1) {
+            // Check if we still have blocks equipped
+            const currentItem = bot.heldItem;
+            if (!currentItem) {
+              return createResponse(
+                `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+                `Ran out of blocks to place.`
+              );
+            }
             return createResponse(
               `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
               `There may be blocks above preventing upward movement.`
