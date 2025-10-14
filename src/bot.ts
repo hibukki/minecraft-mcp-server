@@ -353,6 +353,7 @@ function createMcpServer(bot: mineflayer.Bot) {
 
   // Register all tool categories
   registerCraftingTools(server, bot);
+  registerSmeltingTools(server, bot);
   registerPositionTools(server, bot);
   registerInventoryTools(server, bot);
   registerBlockTools(server, bot);
@@ -429,6 +430,126 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
         const recipe = craftableRecipes[0];
         await bot.craft(recipe, count, craftingTable || undefined);
         return createResponse(`Successfully crafted ${count}x ${itemName}`);
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+}
+
+// ========== Smelting Tools ==========
+
+function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
+  server.tool(
+    "smelt-item",
+    "Smelt an item using a furnace",
+    {
+      itemName: z
+        .string()
+        .describe(
+          "Name of the item to smelt (e.g., 'raw_iron', 'raw_gold', 'sand')"
+        ),
+      fuelName: z
+        .string()
+        .optional()
+        .describe("Name of fuel to use (e.g., 'coal', 'planks'). If not provided, will use available fuel."),
+      count: z
+        .number()
+        .optional()
+        .describe("Number of items to smelt (default: 1)"),
+    },
+    async ({ itemName, fuelName, count = 1 }): Promise<McpResponse> => {
+      try {
+        const mcData = minecraftData(bot.version);
+        const itemsByName = mcData.itemsByName;
+
+        // Validate input item exists
+        const inputItem = itemsByName[itemName];
+        if (!inputItem) {
+          return createResponse(
+            `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'raw_iron', 'sand')`
+          );
+        }
+
+        // Check if bot has the input item
+        const botInputItem = bot.inventory.items().find(i => i.name === itemName);
+        if (!botInputItem || botInputItem.count < count) {
+          return createResponse(
+            `Not enough ${itemName} in inventory. Have: ${botInputItem?.count || 0}, Need: ${count}`
+          );
+        }
+
+        // Find a furnace
+        const furnace = bot.findBlock({
+          matching: mcData.blocksByName.furnace?.id,
+          maxDistance: 32,
+        });
+
+        if (!furnace) {
+          return createResponse(
+            `No furnace found within 32 blocks. Place a furnace nearby.`
+          );
+        }
+
+        log("info", `Found furnace at ${furnace.position}`);
+
+        // Move to furnace if needed
+        if (!bot.canSeeBlock(furnace)) {
+          const goal = new goals.GoalNear(
+            furnace.position.x,
+            furnace.position.y,
+            furnace.position.z,
+            2
+          );
+          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
+        }
+
+        // Open the furnace
+        const furnaceBlock = await bot.openFurnace(furnace);
+
+        // Find fuel
+        let fuel = null;
+        if (fuelName) {
+          fuel = bot.inventory.items().find(i => i.name === fuelName);
+          if (!fuel) {
+            furnaceBlock.close();
+            return createResponse(
+              `Specified fuel '${fuelName}' not found in inventory`
+            );
+          }
+        } else {
+          // Try common fuels: coal, charcoal, planks, sticks
+          const fuelTypes = ['coal', 'charcoal', 'oak_planks', 'birch_planks', 'spruce_planks', 'stick'];
+          for (const fuelType of fuelTypes) {
+            fuel = bot.inventory.items().find(i => i.name === fuelType);
+            if (fuel) break;
+          }
+        }
+
+        if (!fuel) {
+          furnaceBlock.close();
+          return createResponse(
+            `No fuel found in inventory. Need coal, charcoal, planks, or sticks.`
+          );
+        }
+
+        log("info", `Using ${fuel.name} as fuel`);
+
+        // Put items in furnace
+        await furnaceBlock.putInput(botInputItem.type, null, count);
+        await furnaceBlock.putFuel(fuel.type, null, 1);
+
+        // Wait for smelting to complete
+        // Each item takes about 10 seconds to smelt
+        const smeltTime = count * 10 * 1000;
+        log("info", `Waiting ${smeltTime / 1000}s for smelting to complete...`);
+        await new Promise(resolve => setTimeout(resolve, smeltTime));
+
+        // Take output
+        await furnaceBlock.takeOutput();
+        furnaceBlock.close();
+
+        return createResponse(`Successfully smelted ${count}x ${itemName} using ${fuel.name} as fuel`);
       } catch (error) {
         return createErrorResponse(error as Error);
       }
