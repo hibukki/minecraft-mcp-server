@@ -262,7 +262,7 @@ async function digWithTimeout(
       const toolName = heldItem ? heldItem.name : "no tool";
       digError = new Error(
         `Digging is very slow (${elapsed.toFixed(1)}s). Block: ${block.name}. ` +
-        `Using: ${toolName}. Wrong tool?`
+        `Using: ${toolName}. Wrong tool? Or maybe your character isn't reaching the block?`
       );
       return;
     }
