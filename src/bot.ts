@@ -227,7 +227,7 @@ async function gotoAndVerifyProgress(
 async function digWithTimeout(
   bot: mineflayer.Bot,
   block: any,
-  timeoutSeconds: number = 10
+  timeoutSeconds: number = 3
 ): Promise<void> {
   const digPromise = bot.dig(block);
   const startTime = Date.now();
@@ -255,8 +255,8 @@ async function digWithTimeout(
       return;
     }
 
-    // If we're digging for more than 3 seconds, might be using wrong tool
-    if (wasDigging && isDigging && elapsed > 3) {
+    // If we're digging for more than timeoutSeconds, stop with error
+    if (wasDigging && isDigging && elapsed > timeoutSeconds) {
       clearInterval(monitorInterval);
       const heldItem = bot.heldItem;
       const toolName = heldItem ? heldItem.name : "no tool";
@@ -1042,8 +1042,13 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
+      timeoutSeconds: z
+        .number()
+        .optional()
+        .describe("Timeout for digging in seconds (default: 3, use higher for harder blocks)"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
+    async ({ x, y, z, timeoutSeconds }): Promise<McpResponse> => {
+      const digTimeout = timeoutSeconds ?? 3;
       try {
         const blockPos = new Vec3(x, y, z);
         const block = bot.blockAt(blockPos);
@@ -1068,8 +1073,8 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           }
         }
 
-        // Dig with timeout
-        await digWithTimeout(bot, block);
+        // Dig with timeout (use provided timeout or default 3s)
+        await digWithTimeout(bot, block, digTimeout);
 
         return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
       } catch (error) {
