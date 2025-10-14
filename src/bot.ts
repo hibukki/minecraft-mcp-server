@@ -232,7 +232,6 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
-        // Check if any recipe for this item requires a crafting table
         const allRecipes = bot.recipesAll(item.id, null, null);
         if (allRecipes.length === 0) {
           return createResponse(
@@ -242,32 +241,30 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
 
         const requiresCraftingTable = allRecipes.every((r: any) => r.requiresTable);
 
-        // Only look for crafting table if needed
-        let craftingTable = null;
+        let maybeCraftingTable = null;
+
         if (requiresCraftingTable) {
-          craftingTable = bot.findBlock({
+          maybeCraftingTable = bot.findBlock({
             matching: mcData.blocksByName.crafting_table?.id,
             maxDistance: 32,
           });
 
-          if (!craftingTable) {
+          if (!maybeCraftingTable) {
             return createResponse(
               `Cannot craft ${itemName}: requires a crafting table, but none found within 32 blocks.`
             );
           }
         }
 
-        // Find recipes we can actually craft with available materials
-        const craftableRecipes = bot.recipesFor(item.id, null, 1, craftingTable);
+        const craftableRecipes = bot.recipesFor(item.id, null, 1, maybeCraftingTable);
         if (craftableRecipes.length === 0) {
           return createResponse(
             `Cannot craft ${itemName}: missing required materials.`
           );
         }
 
-        // Use the first available recipe and craft
         const recipe = craftableRecipes[0];
-        await bot.craft(recipe, count, craftingTable || undefined);
+        await bot.craft(recipe, count, maybeCraftingTable || undefined);
         return createResponse(`Successfully crafted ${count}x ${itemName}`);
       } catch (error) {
         return createErrorResponse(error as Error);
