@@ -1116,6 +1116,38 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
   );
 
   server.tool(
+    "get-blocks-info",
+    "Get information about multiple blocks at specified positions",
+    {
+      positions: z.array(z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number()
+      })).describe("Array of positions to check, e.g., [{x: 1, y: 2, z: 3}, {x: 4, y: 5, z: 6}]"),
+    },
+    async ({ positions }): Promise<McpResponse> => {
+      try {
+        let result = `Block information for ${positions.length} position(s):\n\n`;
+
+        for (const pos of positions) {
+          const blockPos = new Vec3(pos.x, pos.y, pos.z);
+          const block = bot.blockAt(blockPos);
+
+          if (!block) {
+            result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
+          } else {
+            result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}\n`;
+          }
+        }
+
+        return createResponse(result.trim());
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
     "find-block",
     "Find the nearest block of a specific type",
     {
