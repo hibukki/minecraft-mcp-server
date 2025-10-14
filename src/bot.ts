@@ -666,22 +666,23 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
 
-            let errorMsg = `Movement stuck: Bot is hopping in place with no progress. ` +
-              `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
-              `distance to target: ${currentDistance.toFixed(1)} blocks.\n`;
-
-            // Add diagnostics
-            const dirX = Math.sign(x - currentPos.x);
-            const dirZ = Math.sign(z - currentPos.z);
             const yDiff = y - Math.floor(currentPos.y);
 
+            // If trying to go up, only suggest pillar-up
             if (yDiff >= 3) {
-              errorMsg += `Need to go up ${yDiff} blocks. Consider using pillar-up tool.`;
-            } else if (yDiff <= -3) {
-              errorMsg += `Need to go down ${-yDiff} blocks.`;
-            }
+              stuckError = new Error(`Movement stuck: Need to go up ${yDiff} blocks. Use pillar-up tool.`);
+            } else {
+              // For other cases, show full diagnostics
+              let errorMsg = `Movement stuck: Bot is hopping in place with no progress. ` +
+                `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
+                `distance to target: ${currentDistance.toFixed(1)} blocks.\n`;
 
-            stuckError = new Error(errorMsg);
+              if (yDiff <= -3) {
+                errorMsg += `Need to go down ${-yDiff} blocks.`;
+              }
+
+              stuckError = new Error(errorMsg);
+            }
           } else if (progressInLastSecond < 1) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
