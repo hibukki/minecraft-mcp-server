@@ -842,8 +842,37 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
+        // Check and clear blocks above if they exist (player is 2 blocks tall, check Y+2 through Y+height+1)
+        const buildingBlockName = heldItem.name;
+        const currentPos = bot.entity.position;
+        let blocksDug = 0;
+        for (let yOffset = 2; yOffset <= height + 1; yOffset++) {
+          const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
+          if (blockAbove && blockAbove.name !== 'air') {
+            // Need to dig this block - temporarily equip a tool
+            const pickaxe = bot.inventory.items().find(item =>
+              item.name.includes('pickaxe') || item.name.includes('shovel') || item.name.includes('axe')
+            );
+            if (pickaxe) {
+              await bot.equip(pickaxe, 'hand');
+              await bot.dig(blockAbove);
+              blocksDug++;
+              // Re-equip the building block by name
+              const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
+              if (buildingBlock) {
+                await bot.equip(buildingBlock, 'hand');
+              }
+            } else {
+              // No tool, try to dig anyway
+              await bot.dig(blockAbove);
+              blocksDug++;
+            }
+          }
+        }
+
         const startY = Math.floor(bot.entity.position.y);
         let blocksPlaced = 0;
+        let digMessage = blocksDug > 0 ? ` (cleared ${blocksDug} blocks above first)` : '';
 
         for (let i = 0; i < height; i++) {
           const beforeY = Math.floor(bot.entity.position.y);
@@ -887,16 +916,30 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
                 `Ran out of blocks to place.`
               );
             }
+
+            // Check the 3 blocks above the player to see what's blocking
+            // Player occupies 2 blocks (Y+0 feet, Y+1 head), so check Y+2, Y+3, Y+4
+            const currentPos = bot.entity.position;
+            const blocksAbove: string[] = [];
+            for (let yOffset = 2; yOffset <= 4; yOffset++) {
+              const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
+              if (blockAbove) {
+                blocksAbove.push(`Y+${yOffset}: ${blockAbove.name}`);
+              }
+            }
+
+            const equippedInfo = currentItem ? `${currentItem.name} (x${currentItem.count})` : 'nothing';
+
             return createResponse(
               `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-              `There may be blocks above preventing upward movement.`
+              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`
             );
           }
         }
 
         const finalY = Math.floor(bot.entity.position.y);
         return createResponse(
-          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})`
+          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${digMessage}`
         );
       } catch (error) {
         bot.setControlState("jump", false);
