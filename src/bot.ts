@@ -624,6 +624,8 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
         let blocksPlaced = 0;
 
         for (let i = 0; i < height; i++) {
+          const beforeY = Math.floor(bot.entity.position.y);
+
           // Jump
           bot.setControlState("jump", true);
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -651,6 +653,15 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
 
           // Wait to land
           await new Promise((resolve) => setTimeout(resolve, 300));
+
+          // Check if we actually moved up
+          const afterY = Math.floor(bot.entity.position.y);
+          if (afterY <= beforeY && i < height - 1) {
+            return createResponse(
+              `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+              `There may be blocks above preventing upward movement.`
+            );
+          }
         }
 
         const finalY = Math.floor(bot.entity.position.y);
