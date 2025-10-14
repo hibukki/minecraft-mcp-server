@@ -661,7 +661,28 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           const currentDistance = currentPos.distanceTo(targetPos);
           const progressInLastSecond = lastCheckPos.distanceTo(currentPos);
 
-          if (progressInLastSecond < 1) {
+          // Check if completely stuck (no movement at all - hopping in place)
+          if (progressInLastSecond < 0.1) {
+            clearInterval(progressCheckInterval);
+            bot.pathfinder.stop();
+
+            let errorMsg = `Movement stuck: Bot is hopping in place with no progress. ` +
+              `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
+              `distance to target: ${currentDistance.toFixed(1)} blocks.\n`;
+
+            // Add diagnostics
+            const dirX = Math.sign(x - currentPos.x);
+            const dirZ = Math.sign(z - currentPos.z);
+            const yDiff = y - Math.floor(currentPos.y);
+
+            if (yDiff >= 3) {
+              errorMsg += `Need to go up ${yDiff} blocks. Consider using pillar-up tool.`;
+            } else if (yDiff <= -3) {
+              errorMsg += `Need to go down ${-yDiff} blocks.`;
+            }
+
+            stuckError = new Error(errorMsg);
+          } else if (progressInLastSecond < 1) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
 
