@@ -224,7 +224,6 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
         const mcData = minecraftData(bot.version);
         const itemsByName = mcData.itemsByName;
 
-        // Find the item to craft
         const item = itemsByName[itemName];
         if (!item) {
           return createResponse(
