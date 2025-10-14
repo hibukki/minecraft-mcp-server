@@ -227,7 +227,7 @@ async function gotoAndVerifyProgress(
 async function digWithTimeout(
   bot: mineflayer.Bot,
   block: any,
-  timeoutSeconds: number = 3 // Sometimes the character is using the wrong tool or is stuck on the way to the block, in which case a short timeout is helpful. If trying to mine a block that is known to take a long time - then in that unusual situation it is ok to send a longer number here on purpose
+  timeoutSeconds: number = 3
 ): Promise<void> {
   const digPromise = bot.dig(block);
   const startTime = Date.now();
@@ -1045,7 +1045,7 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
       timeoutSeconds: z
         .number()
         .optional()
-        .describe("Timeout for digging in seconds (default: 3, use higher for harder blocks)"),
+        .describe("Timeout for digging in seconds (default: 3). Use longer timeout (e.g. 10) for hard blocks like iron ore with stone pickaxe"),
     },
     async ({ x, y, z, timeoutSeconds }): Promise<McpResponse> => {
       const digTimeout = timeoutSeconds ?? 3;
