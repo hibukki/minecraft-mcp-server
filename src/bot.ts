@@ -484,11 +484,16 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           if (progressInLastSecond < 1) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
-            stuckError = new Error(
-              `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
+            const yDiff = y - Math.floor(currentPos.y);
+            let errorMsg = `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
               `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
-              `Target: (${x}, ${y}, ${z}), distance: ${currentDistance.toFixed(1)} blocks.`
-            );
+              `Target: (${x}, ${y}, ${z}), distance: ${currentDistance.toFixed(1)} blocks.`;
+
+            if (yDiff >= 2) {
+              errorMsg += ` Consider using the pillar-up tool to build upward.`;
+            }
+
+            stuckError = new Error(errorMsg);
           }
 
           lastCheckPos = currentPos.clone();
