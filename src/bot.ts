@@ -1076,6 +1076,10 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Dig with timeout (use provided timeout or default 3s)
         await digWithTimeout(bot, block, digTimeout);
 
+        // Move to block location to pick up drops
+        const goal = new goals.GoalNear(x, y, z, 1);
+        await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 2 });
+
         return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
       } catch (error) {
         return createErrorResponse(error as Error);
