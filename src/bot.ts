@@ -650,13 +650,55 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           if (progressInLastSecond < 1) {
             clearInterval(progressCheckInterval);
             bot.pathfinder.stop();
-            const yDiff = y - Math.floor(currentPos.y);
-            let errorMsg = `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
-              `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
-              `Target: (${x}, ${y}, ${z}), distance: ${currentDistance.toFixed(1)} blocks.`;
 
-            if (yDiff >= 2) {
-              errorMsg += ` Consider using the pillar-up tool to build upward.`;
+            // Gather diagnostic info about surrounding blocks
+            const dirX = Math.sign(x - currentPos.x);
+            const dirZ = Math.sign(z - currentPos.z);
+            const blocksAhead: string[] = [];
+            const blocksAbove: string[] = [];
+
+            // Check blocks at head level in direction of target (these block horizontal movement)
+            for (let offset = 0; offset <= 1; offset++) {
+              const checkPos = currentPos.offset(dirX * offset, 0, dirZ * offset).floor();
+              const block = bot.blockAt(checkPos);
+              if (block && block.name !== 'air') {
+                blocksAhead.push(`${block.name} at (${checkPos.x}, ${checkPos.y}, ${checkPos.z})`);
+              }
+            }
+
+            // Check blocks above head (Y+1 and Y+2)
+            for (let yOffset = 1; yOffset <= 2; yOffset++) {
+              const headBlock = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
+              if (headBlock && headBlock.name !== 'air') {
+                blocksAbove.push(`${headBlock.name} at Y+${yOffset}`);
+              }
+            }
+
+            const footBlock = bot.blockAt(currentPos.offset(0, -1, 0).floor());
+            const yDiff = y - Math.floor(currentPos.y);
+
+            let errorMsg = `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
+              `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
+              `distance remaining: ${currentDistance.toFixed(1)} blocks.\n`;
+
+            // Add specific diagnostics
+            if (blocksAhead.length > 0) {
+              errorMsg += `Blocks blocking path ahead: ${blocksAhead.join(', ')}. Consider digging or avoiding these.\n`;
+            }
+            if (blocksAbove.length > 0) {
+              errorMsg += `Blocks above head: ${blocksAbove.join(', ')}. This prevents movement - consider digging these.\n`;
+            }
+            if (footBlock?.name === 'air') {
+              errorMsg += `Standing over air - may be stuck on edge of hole or cliff.\n`;
+            }
+
+            // Suggest actions based on vertical difference
+            if (yDiff >= 3) {
+              errorMsg += `Need to go up ${yDiff} blocks. Consider using pillar-up tool.`;
+            } else if (yDiff <= -3) {
+              errorMsg += `Need to go down ${-yDiff} blocks. Consider digging down carefully.`;
+            } else if (blocksAhead.length === 0 && blocksAbove.length === 0) {
+              errorMsg += `No obvious obstacles detected. Pathfinding may be confused by terrain.`;
             }
 
             stuckError = new Error(errorMsg);
@@ -1076,9 +1118,23 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Dig with timeout (use provided timeout or default 3s)
         await digWithTimeout(bot, block, digTimeout);
 
-        // Move to block location to pick up drops
-        const goal = new goals.GoalNear(x, y, z, 1);
-        await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 2 });
+        // Re-equip the tool after digging (dig operation may change held item)
+        if (heldItem) {
+          try {
+            await bot.equip(heldItem, "hand");
+          } catch (equipError) {
+            log("warn", `Failed to re-equip tool after digging: ${formatError(equipError)}`);
+          }
+        }
+
+        // Move to block location to pick up drops (need to be within ~1.5 blocks for auto-collection)
+        try {
+          const goal = new goals.GoalNear(x, y, z, 0.5);
+          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 2 });
+        } catch (pickupError) {
+          log("warn", `Failed to move to collect drops: ${formatError(pickupError)}`);
+          // Continue anyway - drops may be collected passively
+        }
 
         return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
       } catch (error) {
