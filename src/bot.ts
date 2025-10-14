@@ -1360,6 +1360,31 @@ function registerGameStateTools(server: McpServer, bot: mineflayer.Bot) {
       }
     }
   );
+
+  server.tool(
+    "get-status",
+    "Get the bot's health, food, and other status information",
+    {},
+    async (): Promise<McpResponse> => {
+      try {
+        const health = bot.health;
+        const food = bot.food;
+        const saturation = bot.foodSaturation;
+        const oxygen = bot.oxygenLevel;
+
+        let status = `Bot Status:\n`;
+        status += `  Health: ${health}/20 (${(health/20*100).toFixed(0)}%)\n`;
+        status += `  Food: ${food}/20 (${(food/20*100).toFixed(0)}%)\n`;
+        status += `  Saturation: ${saturation.toFixed(1)}\n`;
+        status += `  Oxygen: ${oxygen}/20\n`;
+        status += `  Game Mode: ${bot.game.gameMode}`;
+
+        return createResponse(status);
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
 }
 
 // ========== Main Application ==========
