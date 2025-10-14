@@ -1043,7 +1043,7 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
       timeoutSeconds: z
-        .number()
+        .union([z.number(), z.string().transform(val => parseFloat(val))])
         .optional()
         .describe("Timeout for digging in seconds (default: 3). Use longer timeout (e.g. 10) for hard blocks like iron ore with stone pickaxe"),
     },
