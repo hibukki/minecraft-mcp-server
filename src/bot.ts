@@ -1265,6 +1265,122 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
       }
     }
   );
+
+  server.tool(
+    "get-nearby-blocks",
+    "Get all unique blocks and entities in the nearby area, sorted by distance",
+    {
+      maxDistanceSideways: z
+        .number()
+        .optional()
+        .describe("Maximum horizontal search distance (default: 16)"),
+      maxDistanceUpDown: z
+        .number()
+        .optional()
+        .describe("Maximum vertical search distance (default: 8)"),
+      maxBlockTypes: z
+        .number()
+        .optional()
+        .describe("Limit on number of unique block types to return (default: 20)"),
+    },
+    async ({ maxDistanceSideways = 16, maxDistanceUpDown = 8, maxBlockTypes = 20 }): Promise<McpResponse> => {
+      try {
+        const botPos = bot.entity.position;
+
+        // Define blocks to ignore (common/boring blocks)
+        const boringBlocks = new Set([
+          'air', 'stone', 'dirt', 'grass_block', 'water', 'lava',
+          'bedrock', 'cave_air', 'void_air'
+        ]);
+
+        // Map to track closest instance of each block type
+        const blockTypes = new Map<string, { distance: number; position: Vec3 }>();
+
+        // Search for interesting blocks
+        const minPos = botPos.offset(-maxDistanceSideways, -maxDistanceUpDown, -maxDistanceSideways);
+        const maxPos = botPos.offset(maxDistanceSideways, maxDistanceUpDown, maxDistanceSideways);
+
+        for (let x = Math.floor(minPos.x); x <= Math.floor(maxPos.x); x++) {
+          for (let y = Math.floor(minPos.y); y <= Math.floor(maxPos.y); y++) {
+            for (let z = Math.floor(minPos.z); z <= Math.floor(maxPos.z); z++) {
+              const blockPos = new Vec3(x, y, z);
+              const block = bot.blockAt(blockPos);
+
+              if (!block || boringBlocks.has(block.name)) continue;
+
+              const distance = botPos.distanceTo(blockPos);
+              const existing = blockTypes.get(block.name);
+
+              if (!existing || distance < existing.distance) {
+                blockTypes.set(block.name, { distance, position: blockPos });
+              }
+            }
+          }
+        }
+
+        // Search for entities
+        const entityTypes = new Map<string, { distance: number; position: Vec3 }>();
+
+        for (const entityId in bot.entities) {
+          const entity = bot.entities[entityId];
+
+          // Skip the bot itself
+          if (entity === bot.entity) continue;
+
+          const distance = botPos.distanceTo(entity.position);
+
+          // Check if within search radius
+          const horizontalDist = Math.sqrt(
+            Math.pow(entity.position.x - botPos.x, 2) +
+            Math.pow(entity.position.z - botPos.z, 2)
+          );
+          const verticalDist = Math.abs(entity.position.y - botPos.y);
+
+          if (horizontalDist > maxDistanceSideways || verticalDist > maxDistanceUpDown) continue;
+
+          const entityName = entity.name || (entity as any).username || entity.type || 'unknown';
+          const existing = entityTypes.get(entityName);
+
+          if (!existing || distance < existing.distance) {
+            entityTypes.set(entityName, { distance, position: entity.position });
+          }
+        }
+
+        // Combine blocks and entities
+        const allItems: Array<{ type: string; distance: number; position: Vec3; category: 'block' | 'entity' }> = [];
+
+        blockTypes.forEach((data, name) => {
+          allItems.push({ type: name, distance: data.distance, position: data.position, category: 'block' });
+        });
+
+        entityTypes.forEach((data, name) => {
+          allItems.push({ type: name, distance: data.distance, position: data.position, category: 'entity' });
+        });
+
+        // Sort by distance (closest first) and limit results
+        allItems.sort((a, b) => a.distance - b.distance);
+        const limitedItems = allItems.slice(0, maxBlockTypes);
+
+        if (limitedItems.length === 0) {
+          return createResponse(
+            `No interesting blocks or entities found within ${maxDistanceSideways} blocks horizontally and ${maxDistanceUpDown} blocks vertically.`
+          );
+        }
+
+        let output = `Found ${limitedItems.length} nearby items (of ${allItems.length} total):\n\n`;
+
+        limitedItems.forEach((item, index) => {
+          const pos = item.position;
+          const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
+          output += `${index + 1}. ${marker} ${item.type} - ${item.distance.toFixed(1)} blocks away at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})\n`;
+        });
+
+        return createResponse(output.trim());
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
 }
 
 // ========== Entity Interaction Tools ==========
