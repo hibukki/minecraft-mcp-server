@@ -227,7 +227,7 @@ async function gotoAndVerifyProgress(
 async function digWithTimeout(
   bot: mineflayer.Bot,
   block: any,
-  timeoutSeconds: number = 20
+  timeoutSeconds: number = 10
 ): Promise<void> {
   const digPromise = bot.dig(block);
   const startTime = Date.now();
@@ -248,15 +248,27 @@ async function digWithTimeout(
       lastDigCheck = now;
     }
 
-    // If we haven't dug at all after 5 seconds, something is wrong
-    if (!wasDigging && elapsed > 5) {
+    // If we haven't dug at all after 3 seconds, something is wrong
+    if (!wasDigging && elapsed > 3) {
       clearInterval(monitorInterval);
-      digError = new Error(`Dig failed to start after 5s. Bot may be stuck or block unreachable.`);
+      digError = new Error(`Dig failed to start after 3s. Bot may be stuck or block unreachable.`);
       return;
     }
 
-    // If we were digging but stopped for more than 3 seconds, might be done or stuck
-    if (wasDigging && !isDigging && (now - lastDigCheck) > 3000) {
+    // If we're digging for more than 3 seconds, might be using wrong tool
+    if (wasDigging && isDigging && elapsed > 3) {
+      clearInterval(monitorInterval);
+      const heldItem = bot.heldItem;
+      const toolName = heldItem ? heldItem.name : "no tool";
+      digError = new Error(
+        `Digging is very slow (${elapsed.toFixed(1)}s). Block: ${block.name}. ` +
+        `Using: ${toolName}. Wrong tool? Try using a pickaxe for stone/ore, axe for wood, or shovel for dirt.`
+      );
+      return;
+    }
+
+    // If we were digging but stopped for more than 2 seconds, might be done or stuck
+    if (wasDigging && !isDigging && (now - lastDigCheck) > 2000) {
       // Dig likely completed, let the promise resolve
       clearInterval(monitorInterval);
       return;
@@ -265,8 +277,11 @@ async function digWithTimeout(
     // Overall timeout
     if (elapsed > timeoutSeconds) {
       clearInterval(monitorInterval);
+      const heldItem = bot.heldItem;
+      const toolName = heldItem ? heldItem.name : "no tool";
       digError = new Error(
-        `Dig timeout after ${timeoutSeconds}s. Block may be too hard or bot may need better tools.`
+        `Dig timeout after ${timeoutSeconds}s. Block: ${block.name}. Using: ${toolName}. ` +
+        `May need better tools or block is too hard.`
       );
     }
   }, 500);
