@@ -316,6 +316,11 @@ function setupBot(argv: any): mineflayer.Bot {
     // Set up pathfinder movements
     const mcData = minecraftData(bot.version);
     const defaultMove = new Movements(bot, mcData);
+
+    // Configure pathfinder to avoid unnecessary jumping
+    defaultMove.canDig = false; // Don't dig blocks while pathfinding
+    defaultMove.allow1by1towers = false; // Don't build towers
+
     bot.pathfinder.setMovements(defaultMove);
 
     bot.chat("LLM-powered bot ready to receive instructions!");
