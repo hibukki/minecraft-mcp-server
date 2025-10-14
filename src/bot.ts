@@ -533,11 +533,25 @@ function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
-        log("info", `Using ${fuel.name} as fuel`);
+        // Calculate how much fuel we need (rough estimate: planks smelt ~1.5 items each, coal ~8 items)
+        let fuelNeeded = 1;
+        if (count > 1) {
+          if (fuel.name.includes('plank')) {
+            fuelNeeded = Math.ceil(count / 1.5);
+          } else if (fuel.name === 'coal' || fuel.name === 'charcoal') {
+            fuelNeeded = Math.ceil(count / 8);
+          } else if (fuel.name === 'stick') {
+            fuelNeeded = count; // sticks only smelt 0.5 items each
+          } else {
+            fuelNeeded = count; // conservative default
+          }
+        }
+
+        log("info", `Using ${fuelNeeded}x ${fuel.name} as fuel for ${count} items`);
 
         // Put items in furnace
         await furnaceBlock.putInput(botInputItem.type, null, count);
-        await furnaceBlock.putFuel(fuel.type, null, 1);
+        await furnaceBlock.putFuel(fuel.type, null, fuelNeeded);
 
         // Wait for smelting to complete
         // Each item takes about 10 seconds to smelt
@@ -1118,15 +1132,6 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Dig with timeout (use provided timeout or default 3s)
         await digWithTimeout(bot, block, digTimeout);
 
-        // Re-equip the tool after digging (dig operation may change held item)
-        if (heldItem) {
-          try {
-            await bot.equip(heldItem, "hand");
-          } catch (equipError) {
-            log("warn", `Failed to re-equip tool after digging: ${formatError(equipError)}`);
-          }
-        }
-
         // Move to block location to pick up drops (need to be within ~1.5 blocks for auto-collection)
         try {
           const goal = new goals.GoalNear(x, y, z, 0.5);
@@ -1134,6 +1139,15 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         } catch (pickupError) {
           log("warn", `Failed to move to collect drops: ${formatError(pickupError)}`);
           // Continue anyway - drops may be collected passively
+        }
+
+        // Re-equip the tool after everything (pathfinding for drops may change held item)
+        if (heldItem) {
+          try {
+            await bot.equip(heldItem, "hand");
+          } catch (equipError) {
+            log("warn", `Failed to re-equip tool: ${formatError(equipError)}`);
+          }
         }
 
         return createResponse(`Dug ${block.name} at (${x}, ${y}, ${z})`);
