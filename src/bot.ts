@@ -1315,6 +1315,82 @@ function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
       }
     }
   );
+
+  server.tool(
+    "attack-entity",
+    "Attack a nearby entity repeatedly until it dies",
+    {
+      type: z
+        .string()
+        .optional()
+        .describe("Type of entity to attack (e.g., 'sheep', 'zombie', 'cow'). If not provided, attacks nearest entity."),
+      maxDistance: z
+        .number()
+        .optional()
+        .describe("Maximum search distance (default: 4)"),
+    },
+    async ({ type = "", maxDistance = 4 }): Promise<McpResponse> => {
+      try {
+        const entityFilter = (entity: any) => {
+          // Don't attack players or ourselves
+          if (entity.type === "player" || entity === bot.entity) return false;
+          if (!type) return true;
+          return entity.name && entity.name.includes(type.toLowerCase());
+        };
+
+        const entity = bot.nearestEntity(entityFilter);
+
+        if (
+          !entity ||
+          bot.entity.position.distanceTo(entity.position) > maxDistance
+        ) {
+          return createResponse(
+            `No ${type || "entity"} found within ${maxDistance} blocks to attack`
+          );
+        }
+
+        const entityName = entity.name || entity.type || "entity";
+        const initialPos = entity.position.clone();
+
+        log("info", `Attacking ${entityName} at (${Math.floor(initialPos.x)}, ${Math.floor(initialPos.y)}, ${Math.floor(initialPos.z)})`);
+
+        // Attack until entity is dead
+        let attackCount = 0;
+        const maxAttacks = 20; // Safety limit
+
+        while (entity.isValid && attackCount < maxAttacks) {
+          // Look at the entity
+          await bot.lookAt(entity.position, true);
+
+          // Attack (synchronous)
+          bot.attack(entity);
+          attackCount++;
+
+          // Wait a bit between attacks (attack cooldown)
+          await new Promise(resolve => setTimeout(resolve, 500));
+
+          // Check if entity is still close enough
+          if (bot.entity.position.distanceTo(entity.position) > maxDistance + 2) {
+            return createResponse(
+              `${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`
+            );
+          }
+        }
+
+        if (attackCount >= maxAttacks) {
+          return createResponse(
+            `Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`
+          );
+        }
+
+        return createResponse(
+          `Successfully killed ${entityName} with ${attackCount} attacks at position (${Math.floor(initialPos.x)}, ${Math.floor(initialPos.y)}, ${Math.floor(initialPos.z)})`
+        );
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
 }
 
 // ========== Chat Tools ==========
