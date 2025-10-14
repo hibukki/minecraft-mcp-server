@@ -365,8 +365,11 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
         .number()
         .optional()
         .describe("Number of items to craft (default: 1)"),
+      useCraftingTable: z
+        .union([z.boolean(), z.string().transform(val => val === 'true')])
+        .describe("Whether to use a crafting table for this recipe (required for most tools and complex items)"),
     },
-    async ({ itemName, count = 1 }): Promise<McpResponse> => {
+    async ({ itemName, count = 1, useCraftingTable }): Promise<McpResponse> => {
       try {
         const mcData = minecraftData(bot.version);
         const itemsByName = mcData.itemsByName;
@@ -378,39 +381,38 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
-        const allRecipes = bot.recipesAll(item.id, null, null);
-        if (allRecipes.length === 0) {
-          return createResponse(
-            `No recipe found for ${itemName}.`
-          );
-        }
+        let craftingTable = null;
 
-        const requiresCraftingTable = allRecipes.every((r: any) => r.requiresTable);
-
-        let maybeCraftingTable = null;
-
-        if (requiresCraftingTable) {
-          maybeCraftingTable = bot.findBlock({
+        // If crafting table is required, find it first
+        if (useCraftingTable) {
+          craftingTable = bot.findBlock({
             matching: mcData.blocksByName.crafting_table?.id,
             maxDistance: 32,
           });
 
-          if (!maybeCraftingTable) {
+          if (!craftingTable) {
             return createResponse(
-              `Cannot craft ${itemName}: requires a crafting table, but none found within 32 blocks.`
+              `Cannot craft ${itemName}: crafting table required but none found within 32 blocks. Place a crafting table nearby.`
             );
           }
+
+          log("info", `Found crafting table at ${craftingTable.position}`);
         }
 
-        const craftableRecipes = bot.recipesFor(item.id, null, 1, maybeCraftingTable);
+        // Try to get craftable recipes directly
+        const craftableRecipes = bot.recipesFor(item.id, null, 1, craftingTable);
+        log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
+
         if (craftableRecipes.length === 0) {
+          const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
           return createResponse(
-            `Cannot craft ${itemName}: missing required materials.`
+            `Cannot craft ${itemName}: missing required materials. ` +
+            `Inventory: ${inventory}`
           );
         }
 
         const recipe = craftableRecipes[0];
-        await bot.craft(recipe, count, maybeCraftingTable || undefined);
+        await bot.craft(recipe, count, craftingTable || undefined);
         return createResponse(`Successfully crafted ${count}x ${itemName}`);
       } catch (error) {
         return createErrorResponse(error as Error);
