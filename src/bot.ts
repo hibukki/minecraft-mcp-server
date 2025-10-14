@@ -1000,6 +1000,29 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Block Interaction Tools ==========
 
+function getLightDescription(light: number | undefined): string {
+  if (light === undefined || light === null) {
+    return "Light level: unknown";
+  }
+
+  let description: string;
+  if (light === 0) {
+    description = "completely dark";
+  } else if (light <= 3) {
+    description = "very dark";
+  } else if (light <= 7) {
+    description = "dim";
+  } else if (light <= 11) {
+    description = "moderate";
+  } else if (light <= 14) {
+    description = "bright";
+  } else {
+    description = "full brightness";
+  }
+
+  return `Light level: ${light} (${description})`;
+}
+
 function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
   server.tool(
     "place-block",
@@ -1184,8 +1207,10 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
+        const lightInfo = getLightDescription(block.light);
+
         return createResponse(
-          `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z})`
+          `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z})\n${lightInfo}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -1214,7 +1239,8 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           if (!block) {
             result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
           } else {
-            result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}\n`;
+            const lightInfo = getLightDescription(block.light);
+            result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
           }
         }
 
