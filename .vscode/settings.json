@@ -1,6 +1,7 @@
 {
     "editor.formatOnSave": false,
     "cSpell.words": [
-        "mineflayer"
+        "mineflayer",
+        "cooldown"
     ],
 }
