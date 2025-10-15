@@ -17,7 +17,8 @@
 
 # Editing code in the mcp server
 
-You should be able to reload the mcp server, the "minecraft" mcp tool has a tool named "restart".
+- You should be able to reload the mcp server, the "minecraft" mcp tool has a tool named "restart_server".
+- Errors: Try explaining to the caller what is wrong. e.g if failing to move, tell the caller what we got stuck at and where (or whatever is relevant)
 
 ## Commit
 
