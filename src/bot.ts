@@ -4,10 +4,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import mineflayer from "mineflayer";
+import type { Bot, Furnace } from "mineflayer";
 import { Vec3 } from "vec3";
 import minecraftData from "minecraft-data";
 import yargs from "yargs";
+import type { Arguments } from "yargs";
 import { hideBin } from "yargs/helpers";
+import type { Block } from "prismarine-block";
+import type { Item } from "prismarine-item";
+import type { Entity } from "prismarine-entity";
 
 // ========== Type Definitions ==========
 
@@ -141,8 +146,8 @@ const messageStore = new MessageStore();
  * Checks every few seconds if we're still actively digging
  */
 async function digWithTimeout(
-  bot: mineflayer.Bot,
-  block: any,
+  bot: Bot,
+  block: Block,
   timeoutSeconds: number = 3
 ): Promise<void> {
   const digPromise = bot.dig(block);
@@ -218,8 +223,8 @@ async function digWithTimeout(
  * Returns detailed error info if mining fails, and count of blocks mined
  */
 async function tryMiningOneBlock(
-  bot: mineflayer.Bot,
-  block: any,
+  bot: Bot,
+  block: Block,
   allowedMiningToolsToMinedBlocks: Record<string, string[]>,
   digTimeout: number = 3
 ): Promise<{success: boolean, error?: string, blocksMined: number}> {
@@ -291,12 +296,12 @@ async function tryMiningOneBlock(
 
 // ========== Bot Setup ==========
 
-function setupBot(argv: any): mineflayer.Bot {
+function setupBot(argv: Arguments): Bot {
   // Configure bot options based on command line arguments
   const botOptions = {
-    host: argv.host,
-    port: argv.port,
-    username: argv.username,
+    host: argv.host as string,
+    port: argv.port as number,
+    username: argv.username as string,
   };
 
   // Create a bot instance
@@ -331,7 +336,7 @@ function setupBot(argv: any): mineflayer.Bot {
 
 // ========== MCP Server Configuration ==========
 
-function createMcpServer(bot: mineflayer.Bot) {
+function createMcpServer(bot: Bot) {
   const server = new McpServer({
     name: "minecraft-mcp-server",
     version: "1.2.0",
@@ -353,7 +358,7 @@ function createMcpServer(bot: mineflayer.Bot) {
 
 // ========== Crafting Tools ==========
 
-function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
+function registerCraftingTools(server: McpServer, bot: Bot) {
   server.tool(
     "craft-item",
     "Craft an item using available materials",
@@ -425,7 +430,7 @@ function registerCraftingTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Smelting Tools ==========
 
-function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
+function registerSmeltingTools(server: McpServer, bot: Bot) {
   server.tool(
     "smelt-item",
     "Smelt an item using a furnace",
@@ -586,18 +591,18 @@ function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
 // ========== Position and Movement Tools ==========
 
 // Helper functions for pillar-up movement
-async function jumpAndWaitToBeInAir(bot: mineflayer.Bot): Promise<void> {
+async function jumpAndWaitToBeInAir(bot: Bot): Promise<void> {
   bot.setControlState('jump', true);
   await new Promise(r => setTimeout(r, 100)); // Initial jump delay
   await new Promise(r => setTimeout(r, 200)); // Wait to be airborne
 }
 
-async function waitToLandFromAir(bot: mineflayer.Bot): Promise<void> {
+async function waitToLandFromAir(bot: Bot): Promise<void> {
   bot.setControlState('jump', false);
   await new Promise(r => setTimeout(r, 300)); // Wait to land
 }
 
-async function pillarUpOneBlock(bot: mineflayer.Bot): Promise<boolean> {
+async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
   await jumpAndWaitToBeInAir(bot);
 
   const currentPos = bot.entity.position;
@@ -625,7 +630,7 @@ async function pillarUpOneBlock(bot: mineflayer.Bot): Promise<boolean> {
 
 // Helper functions for move-to horizontal movement
 async function walkForwardsIfPossible(
-  bot: mineflayer.Bot,
+  bot: Bot,
   currentPos: Vec3,
   forwardVec: Vec3
 ): Promise<boolean> {
@@ -647,7 +652,7 @@ async function walkForwardsIfPossible(
 }
 
 async function jumpOverSmallObstacleIfPossible(
-  bot: mineflayer.Bot,
+  bot: Bot,
   currentPos: Vec3,
   forwardVec: Vec3
 ): Promise<boolean> {
@@ -677,7 +682,7 @@ async function jumpOverSmallObstacleIfPossible(
 }
 
 async function mineForwardsIfPossible(
-  bot: mineflayer.Bot,
+  bot: Bot,
   currentPos: Vec3,
   forwardVec: Vec3,
   allowMiningOf: Record<string, string[]>,
@@ -704,7 +709,7 @@ async function mineForwardsIfPossible(
   return {success: true, blocksMined: totalBlocksMined};
 }
 
-function didArriveAtTarget(bot: mineflayer.Bot, target: Vec3): boolean {
+function didArriveAtTarget(bot: Bot, target: Vec3): boolean {
   const HORIZONTAL_THRESHOLD = 1.5;
   const VERTICAL_THRESHOLD = 1.0;
   const currentPos = bot.entity.position;
@@ -716,7 +721,7 @@ function didArriveAtTarget(bot: mineflayer.Bot, target: Vec3): boolean {
 }
 
 async function moveOneStep(
-  bot: mineflayer.Bot,
+  bot: Bot,
   target: Vec3,
   forwardVec: Vec3,
   allowPillarUpWith: string[],
@@ -812,7 +817,7 @@ async function moveOneStep(
   };
 }
 
-function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
+function registerPositionTools(server: McpServer, bot: Bot) {
   server.tool(
     "get-position",
     "Get the current position of the bot",
@@ -1112,7 +1117,7 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Inventory Management Tools ==========
 
-function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
+function registerInventoryTools(server: McpServer, bot: Bot) {
   server.tool(
     "list-inventory",
     "List all items in the bot's inventory",
@@ -1120,7 +1125,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
     async (): Promise<McpResponse> => {
       try {
         const items = bot.inventory.items();
-        const itemList: InventoryItem[] = items.map((item: any) => ({
+        const itemList: InventoryItem[] = items.map((item) => ({
           name: item.name,
           count: item.count,
           slot: item.slot,
@@ -1151,7 +1156,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
     async ({ nameOrType }): Promise<McpResponse> => {
       try {
         const items = bot.inventory.items();
-        const item = items.find((item: any) =>
+        const item = items.find((item) =>
           item.name.includes(nameOrType.toLowerCase())
         );
 
@@ -1184,7 +1189,7 @@ function registerInventoryTools(server: McpServer, bot: mineflayer.Bot) {
       try {
         const items = bot.inventory.items();
         const item = items.find(
-          (item: any) => item.name === itemName.toLowerCase()
+          (item) => item.name === itemName.toLowerCase()
         );
 
         if (!item) {
@@ -1211,7 +1216,7 @@ function getLightLevel(light: number | undefined): string {
   return `light: ${light}/15`;
 }
 
-function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
+function registerBlockTools(server: McpServer, bot: Bot) {
   server.tool(
     "place-block",
     "Place a block at the specified position",
@@ -1577,7 +1582,7 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Entity Interaction Tools ==========
 
-function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
+function registerEntityTools(server: McpServer, bot: Bot) {
   server.tool(
     "find-entity",
     "Find the nearest entity of a specific type",
@@ -1593,11 +1598,11 @@ function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
     },
     async ({ type = "", maxDistance = 16 }): Promise<McpResponse> => {
       try {
-        const entityFilter = (entity: any) => {
+        const entityFilter = (entity: Entity) => {
           if (!type) return true;
           if (type === "player") return entity.type === "player";
           if (type === "mob") return entity.type === "mob";
-          return entity.name && entity.name.includes(type.toLowerCase());
+          return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
         };
 
         const entity = bot.nearestEntity(entityFilter);
@@ -1639,11 +1644,11 @@ function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
     },
     async ({ type = "", maxDistance = 4 }): Promise<McpResponse> => {
       try {
-        const entityFilter = (entity: any) => {
+        const entityFilter = (entity: Entity) => {
           // Don't attack players or ourselves
           if (entity.type === "player" || entity === bot.entity) return false;
           if (!type) return true;
-          return entity.name && entity.name.includes(type.toLowerCase());
+          return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
         };
 
         const entity = bot.nearestEntity(entityFilter);
@@ -1703,7 +1708,7 @@ function registerEntityTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Chat Tools ==========
 
-function registerChatTools(server: McpServer, bot: mineflayer.Bot) {
+function registerChatTools(server: McpServer, bot: Bot) {
   server.tool(
     "send-chat",
     "Send a chat message in-game",
@@ -1758,7 +1763,7 @@ function registerChatTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Flight Tools ==========
 
-function registerFlightTools(server: McpServer, bot: mineflayer.Bot) {
+function registerFlightTools(server: McpServer, bot: Bot) {
   server.tool(
     "fly-to",
     "Make the bot fly to a specific position",
@@ -1815,7 +1820,7 @@ function registerFlightTools(server: McpServer, bot: mineflayer.Bot) {
 }
 
 function createCancellableFlightOperation(
-  bot: mineflayer.Bot,
+  bot: Bot,
   destination: Vec3,
   controller: AbortController
 ): Promise<boolean> {
@@ -1845,7 +1850,7 @@ function createCancellableFlightOperation(
 
 // ========== Game State Tools ============
 
-function registerGameStateTools(server: McpServer, bot: mineflayer.Bot) {
+function registerGameStateTools(server: McpServer, bot: Bot) {
   server.tool(
     "detect-gamemode",
     "Detect the gamemode on game",
@@ -1888,7 +1893,7 @@ function registerGameStateTools(server: McpServer, bot: mineflayer.Bot) {
 // ========== Main Application ==========
 
 async function main() {
-  let bot: mineflayer.Bot | undefined;
+  let bot: Bot | undefined;
 
   try {
     // Parse command line arguments
