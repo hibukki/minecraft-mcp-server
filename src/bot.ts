@@ -866,7 +866,7 @@ async function moveOneStep(
     }
 
     await bot.equip(pillarBlock, 'hand');
-    const pillared = await pillarUpOneBlock(bot);
+    const pillared = await pillarUpOneBlock(bot); // TODO: pillarUpOneBlock should handle all pillar-related tests (like "do we have the correct block") and errors. moveOneStep can decide if we want to pillar (is the target up?) but shouldn't know how to pillar
     const newPos = bot.entity.position;
     const newDist = newPos.distanceTo(target);
     const movedCloser = Math.max(0, startDist - newDist);
@@ -890,14 +890,16 @@ async function moveOneStep(
     }
   }
 
-  // Nothing worked - stuck
+  if (errorsFromPreviousSteps.length == 0) {
+    // TODO: Crash. We should always have error details
+  }
+
+  // Stuck
   return {
     blocksMined: 0,
     movedBlocksCloser: 0,
     pillaredUpBlocks: 0,
-    error: errorsFromPreviousSteps.length > 0
-      ? errorsFromPreviousSteps.join("; ")
-      : "Stuck: No progress made (unknown reason)"
+    error: errorsFromPreviousSteps.join("; ")
   };
 }
 
@@ -1168,13 +1170,12 @@ function registerPositionTools(server: McpServer, bot: Bot) {
                               stepResult.movedBlocksCloser >= 0.3 ||
                               stepResult.pillaredUpBlocks > 0;
 
-          if (!madeProgress) {
-            // Calculate progress stats
+          if (!madeProgress && iteration > 0) {
             const distRemaining = bot.entity.position.distanceTo(target);
             const distTraveled = startPos.distanceTo(bot.entity.position);
 
             return createResponse(
-              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep"}. ` +
+              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep (probably a bug: info should normally be available)"}. ` +
               `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
               `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
               `${distRemaining.toFixed(1)} blocks remaining to target.`
