@@ -1300,9 +1300,19 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Check light level before digging
         const lightLevel = block.light;
 
-        if (!bot.canDigBlock(block) || !bot.canSeeBlock(block)) {
+        // Check visibility first
+        if (!bot.canSeeBlock(block)) {
           return createResponse(
-            `Block ${block.name} at (${x}, ${y}, ${z}) is not visible or cannot be dug. Move closer manually using move-in-direction tool.`
+            `Block ${block.name} at (${x}, ${y}, ${z}) is not visible. Move closer or look at it first.`
+          );
+        }
+
+        // Check if we can dig it
+        if (!bot.canDigBlock(block)) {
+          const heldItem = bot.heldItem;
+          const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
+          return createResponse(
+            `Cannot dig ${block.name} at (${x}, ${y}, ${z}). Holding: ${toolInfo}. Block might be out of reach or require different tool.`
           );
         }
 
