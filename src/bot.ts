@@ -1300,13 +1300,6 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Check light level before digging
         const lightLevel = block.light;
 
-        // Check visibility first
-        if (!bot.canSeeBlock(block)) {
-          return createResponse(
-            `Block ${block.name} at (${x}, ${y}, ${z}) is not visible. Move closer or look at it first.`
-          );
-        }
-
         // Check if we can dig it
         if (!bot.canDigBlock(block)) {
           const heldItem = bot.heldItem;
