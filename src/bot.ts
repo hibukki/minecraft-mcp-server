@@ -606,8 +606,11 @@ async function mineForwardsIfPossible(
   forwardVec: Vec3,
   selectMiningTool: (blockName: string) => any,
   allowMiningOf: Record<string, string[]>,
-  DIG_TIMEOUT_SECONDS: number
-): Promise<{success: boolean, error?: string}> {
+  DIG_TIMEOUT_SECONDS: number,
+  lastMinedBlock: {name: string, pos: Vec3, startTime: number} | null,
+  now: number,
+  MINING_SAME_BLOCK_TIMEOUT_MS: number
+): Promise<{success: boolean, error?: string, updatedLastMinedBlock?: {name: string, pos: Vec3, startTime: number} | null}> {
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
 
@@ -627,9 +630,39 @@ async function mineForwardsIfPossible(
         continue;
       }
 
+      // Check if we're mining the same block for too long
+      if (bot.targetDigBlock) {
+        const targetBlockPos = bot.targetDigBlock.position;
+        const sameBlock = lastMinedBlock &&
+          targetBlockPos.x === lastMinedBlock.pos.x &&
+          targetBlockPos.y === lastMinedBlock.pos.y &&
+          targetBlockPos.z === lastMinedBlock.pos.z;
+
+        if (sameBlock && lastMinedBlock) {
+          const miningDuration = now - lastMinedBlock.startTime;
+          if (miningDuration > MINING_SAME_BLOCK_TIMEOUT_MS) {
+            bot.stopDigging();
+            const heldItem = bot.heldItem;
+            const toolName = heldItem ? heldItem.name : "no tool";
+            return {
+              success: false,
+              error: `Stuck mining ${bot.targetDigBlock.name} at (${targetBlockPos.x}, ${targetBlockPos.y}, ${targetBlockPos.z}) for ${(miningDuration / 1000).toFixed(1)}s. Tool: ${toolName}. Wrong tool or block too hard?`,
+              updatedLastMinedBlock: lastMinedBlock
+            };
+          }
+        } else {
+          // Started mining a new block
+          lastMinedBlock = {
+            name: bot.targetDigBlock.name,
+            pos: targetBlockPos.clone(),
+            startTime: now
+          };
+        }
+      }
+
       try {
         await digWithTimeout(bot, obstacle, DIG_TIMEOUT_SECONDS);
-        return {success: true};
+        return {success: true, updatedLastMinedBlock: null};
       } catch (digError) {
         bot.stopDigging();
         return {
@@ -974,27 +1007,38 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
             );
           }
 
-          // Check if mining same block too long
-          if (bot.targetDigBlock) {
-            const diggingBlock = bot.targetDigBlock;
-            if (lastMinedBlock && lastMinedBlock.pos.equals(diggingBlock.position)) {
-              if (now - lastMinedBlock.startTime > MINING_SAME_BLOCK_TIMEOUT_MS) {
-                return createResponse(
-                  `Stuck mining ${diggingBlock.name} at (${diggingBlock.position.x}, ${diggingBlock.position.y}, ${diggingBlock.position.z}) ` +
-                  `for ${((now - lastMinedBlock.startTime) / 1000).toFixed(1)}s. ` +
-                  `Tool: ${bot.heldItem?.name || 'none'}. Suggestion: Wrong tool or block too hard to mine.`
-                );
-              }
-            } else {
-              lastMinedBlock = {
-                name: diggingBlock.name,
-                pos: diggingBlock.position.clone(),
-                startTime: now
-              };
-            }
+          await bot.lookAt(target, false);
+
+          if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
+            continue;
           }
 
-          // ===== VERTICAL MOVEMENT: Pillar up if target above us =====
+          if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
+            continue;
+          }
+
+          const mineResult = await mineForwardsIfPossible(
+            bot, currentPos, forwardVec, selectMiningTool, allowMiningOf,
+            DIG_TIMEOUT_SECONDS, lastMinedBlock, now, MINING_SAME_BLOCK_TIMEOUT_MS
+          );
+
+          // Update lastMinedBlock if the function provided an updated value
+          if (mineResult.updatedLastMinedBlock !== undefined) {
+            lastMinedBlock = mineResult.updatedLastMinedBlock;
+          }
+
+          if (mineResult.error) {
+            return createResponse(mineResult.error);
+          }
+
+          if (mineResult.success) {
+            blocksMined++;
+            lastProgressTime = Date.now();
+            await walkForwardsIfPossible(bot, currentPos, forwardVec);
+            continue;
+          }
+
+          // Pillar up as last resort if target is above and we're stuck
           if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
             if (allowPillarUpWith.length === 0) {
               return createResponse(
@@ -1004,7 +1048,6 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
               );
             }
 
-            // Find and equip pillar block
             const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
             if (!pillarBlock) {
               return createResponse(
@@ -1014,40 +1057,8 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
 
             await bot.equip(pillarBlock, 'hand');
             await pillarUpOneBlock(bot);
-            continue; // Re-check distances after pillaring
-          }
-
-          // ===== HORIZONTAL MOVEMENT: Look at target and move forward =====
-          await bot.lookAt(target, false); // Yaw only (no pitch forcing)
-
-          // Try movement strategies in order: walk, jump, mine
-          if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
             continue;
           }
-
-          if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
-            continue;
-          }
-
-          const mineResult = await mineForwardsIfPossible(bot, currentPos, forwardVec, selectMiningTool, allowMiningOf, DIG_TIMEOUT_SECONDS);
-          if (mineResult.error) {
-            return createResponse(mineResult.error);
-          }
-
-          if (mineResult.success) {
-            blocksMined++;
-            lastProgressTime = Date.now();
-            lastMinedBlock = null;
-            // After mining, try to walk
-            await walkForwardsIfPossible(bot, currentPos, forwardVec);
-            continue;
-          }
-
-          // Fallback: If we couldn't mine (no tools configured), just try to move forward
-          bot.setControlState('forward', true);
-          await new Promise(r => setTimeout(r, 100));
-          bot.setControlState('forward', false);
-          await new Promise(r => setTimeout(r, 50));
         }
 
         // Max iterations exceeded
