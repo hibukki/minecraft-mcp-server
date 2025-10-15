@@ -867,16 +867,16 @@ async function mineForwardsIfPossible(
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
+  // Build detailed error message about what blocks we tried to mine
+  const headInfo = blockAheadHead
+    ? `${blockAheadHead.name} at (${Math.floor(blockAheadHead.position.x)}, ${Math.floor(blockAheadHead.position.y)}, ${Math.floor(blockAheadHead.position.z)})`
+    : 'air or null';
+  const feetInfo = blockAheadFeet
+    ? `${blockAheadFeet.name} at (${Math.floor(blockAheadFeet.position.x)}, ${Math.floor(blockAheadFeet.position.y)}, ${Math.floor(blockAheadFeet.position.z)})`
+    : 'air or null';
+
   // If we mined nothing and should return an error
   if (totalBlocksMined === 0 && returnErrorIfNothingMined) {
-    // Build detailed error message about what blocks we tried to mine
-    const headInfo = blockAheadHead
-      ? `${blockAheadHead.name} at (${Math.floor(blockAheadHead.position.x)}, ${Math.floor(blockAheadHead.position.y)}, ${Math.floor(blockAheadHead.position.z)})`
-      : 'air or null';
-    const feetInfo = blockAheadFeet
-      ? `${blockAheadFeet.name} at (${Math.floor(blockAheadFeet.position.x)}, ${Math.floor(blockAheadFeet.position.y)}, ${Math.floor(blockAheadFeet.position.z)})`
-      : 'air or null';
-
     return {
       success: false,
       blocksMined: 0,
@@ -884,7 +884,14 @@ async function mineForwardsIfPossible(
     };
   }
 
-  return {success: true, blocksMined: totalBlocksMined};
+  // If we mined some blocks, return success
+  if (totalBlocksMined > 0) {
+    return {success: true, blocksMined: totalBlocksMined};
+  }
+
+  // If we're here, totalBlocksMined is 0 and returnErrorIfNothingMined is false
+  // This means we were told it's okay to return with no mining
+  return {success: true, blocksMined: 0};
 }
 
 function didArriveAtTarget(bot: Bot, target: Vec3): {arrived: boolean, distance: number} {
