@@ -213,6 +213,78 @@ async function digWithTimeout(
   }
 }
 
+/**
+ * Try to mine a single block using the provided tool-to-blocks mapping
+ * Returns detailed error info if mining fails
+ */
+async function tryMiningOneBlock(
+  bot: mineflayer.Bot,
+  block: any,
+  allowedMiningToolsToMinedBlocks: Record<string, string[]>,
+  digTimeout: number = 3
+): Promise<{success: boolean, error?: string}> {
+  const botPos = bot.entity.position;
+  const blockPos = block.position;
+  const distance = botPos.distanceTo(blockPos);
+
+  // Find the right tool for this block
+  let tool = null;
+  for (const [toolName, blockNames] of Object.entries(allowedMiningToolsToMinedBlocks)) {
+    if (blockNames.includes(block.name)) {
+      tool = bot.inventory.items().find(item => item.name === toolName);
+      if (!tool) {
+        return {
+          success: false,
+          error: `Tool ${toolName} needed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) but not found in inventory`
+        };
+      }
+      break;
+    }
+  }
+
+  // If no tool configured for this block and we have a non-empty mapping, it's an error
+  if (!tool && Object.keys(allowedMiningToolsToMinedBlocks).length > 0) {
+    const heldItem = bot.heldItem;
+    const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
+    return {
+      success: false,
+      error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is not in allowedMiningToolsToMinedBlocks. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks`
+    };
+  }
+
+  // Equip tool if found
+  if (tool) {
+    await bot.equip(tool, 'hand');
+  }
+
+  // Look at the block
+  await bot.lookAt(blockPos.offset(0.5, 0.5, 0.5), true);
+
+  // Check if we can dig it
+  if (!bot.canDigBlock(block)) {
+    const heldItem = bot.heldItem;
+    const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
+    return {
+      success: false,
+      error: `Cannot dig ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Block might be out of reach or require different tool`
+    };
+  }
+
+  // Try to dig with timeout
+  try {
+    await digWithTimeout(bot, block, digTimeout);
+    return {success: true};
+  } catch (digError) {
+    bot.stopDigging();
+    const heldItem = bot.heldItem;
+    const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
+    return {
+      success: false,
+      error: `Failed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Error: ${formatError(digError)}`
+    };
+  }
+}
+
 // ========== Bot Setup ==========
 
 function setupBot(argv: any): mineflayer.Bot {
@@ -604,81 +676,25 @@ async function mineForwardsIfPossible(
   bot: mineflayer.Bot,
   currentPos: Vec3,
   forwardVec: Vec3,
-  selectMiningTool: (blockName: string) => any,
   allowMiningOf: Record<string, string[]>,
-  DIG_TIMEOUT_SECONDS: number,
-  lastMinedBlock: {name: string, pos: Vec3, startTime: number} | null,
-  now: number,
-  MINING_SAME_BLOCK_TIMEOUT_MS: number
-): Promise<{success: boolean, error?: string, updatedLastMinedBlock?: {name: string, pos: Vec3, startTime: number} | null}> {
-  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  DIG_TIMEOUT_SECONDS: number
+): Promise<{success: boolean, error?: string}> {
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
 
-  const obstaclesAhead = [blockAheadFeet, blockAheadHead].filter(
-    block => block && block.name !== 'air' && block.name !== 'water' && block.name !== 'lava'
-  );
-
-  for (const obstacle of obstaclesAhead) {
-    if (!obstacle) continue;
-
-    const tool = selectMiningTool(obstacle.name);
-    if (tool) {
-      await bot.equip(tool, 'hand');
-      await bot.lookAt(obstacle.position.offset(0.5, 0.5, 0.5), true);
-
-      if (!bot.canDigBlock(obstacle)) {
-        continue;
-      }
-
-      // Check if we're mining the same block for too long
-      if (bot.targetDigBlock) {
-        const targetBlockPos = bot.targetDigBlock.position;
-        const sameBlock = lastMinedBlock &&
-          targetBlockPos.x === lastMinedBlock.pos.x &&
-          targetBlockPos.y === lastMinedBlock.pos.y &&
-          targetBlockPos.z === lastMinedBlock.pos.z;
-
-        if (sameBlock && lastMinedBlock) {
-          const miningDuration = now - lastMinedBlock.startTime;
-          if (miningDuration > MINING_SAME_BLOCK_TIMEOUT_MS) {
-            bot.stopDigging();
-            const heldItem = bot.heldItem;
-            const toolName = heldItem ? heldItem.name : "no tool";
-            return {
-              success: false,
-              error: `Stuck mining ${bot.targetDigBlock.name} at (${targetBlockPos.x}, ${targetBlockPos.y}, ${targetBlockPos.z}) for ${(miningDuration / 1000).toFixed(1)}s. Tool: ${toolName}. Wrong tool or block too hard?`,
-              updatedLastMinedBlock: lastMinedBlock
-            };
-          }
-        } else {
-          // Started mining a new block
-          lastMinedBlock = {
-            name: bot.targetDigBlock.name,
-            pos: targetBlockPos.clone(),
-            startTime: now
-          };
-        }
-      }
-
-      try {
-        await digWithTimeout(bot, obstacle, DIG_TIMEOUT_SECONDS);
-        return {success: true, updatedLastMinedBlock: null};
-      } catch (digError) {
-        bot.stopDigging();
-        return {
-          success: false,
-          error: `Failed to mine ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}): ${formatError(digError)}`
-        };
-      }
-    } else if (Object.keys(allowMiningOf).length > 0) {
-      return {
-        success: false,
-        error: `Obstacle ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}) is blocking path but not in allowMiningOf. Add it to allowMiningOf or navigate around.`
-      };
-    }
+  // Try mining head block first
+  if (blockAheadHead && blockAheadHead.name !== 'air' && blockAheadHead.name !== 'water' && blockAheadHead.name !== 'lava') {
+    const result = await tryMiningOneBlock(bot, blockAheadHead, allowMiningOf, DIG_TIMEOUT_SECONDS);
+    if (!result.success) return result;
   }
 
-  return {success: false};
+  // Try mining feet block
+  if (blockAheadFeet && blockAheadFeet.name !== 'air' && blockAheadFeet.name !== 'water' && blockAheadFeet.name !== 'lava') {
+    const result = await tryMiningOneBlock(bot, blockAheadFeet, allowMiningOf, DIG_TIMEOUT_SECONDS);
+    if (!result.success) return result;
+  }
+
+  return {success: true};
 }
 
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
@@ -910,32 +926,16 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       const target = new Vec3(x, y, z);
       const DIG_TIMEOUT_SECONDS = 3;
 
-      // Helper: Select appropriate mining tool for a block
-      const selectMiningTool = (blockName: string) => {
-        for (const [toolName, blockNames] of Object.entries(allowMiningOf)) {
-          if (blockNames.includes(blockName)) {
-            const tool = bot.inventory.items().find(item => item.name === toolName);
-            if (!tool) {
-              throw new Error(`Tool ${toolName} needed to mine ${blockName} but not found in inventory`);
-            }
-            return tool;
-          }
-        }
-        return null; // No tool configured for this block
-      };
-
       try {
         // ===== MAIN MOVEMENT LOOP =====
         let lastProgressPos = startPos.clone();
         let lastProgressTime = startTime;
-        let lastMinedBlock: {name: string, pos: Vec3, startTime: number} | null = null;
         let blocksMined = 0;
         let iterationCount = 0;
         const MAX_ITERATIONS = 1000; // Safety limit
         const HORIZONTAL_THRESHOLD = 1.5;
         const VERTICAL_THRESHOLD = 1.0;
         const PROGRESS_TIMEOUT_MS = 1000;
-        const MINING_SAME_BLOCK_TIMEOUT_MS = 5000;
         const TOTAL_TIMEOUT_MS = 10000;
 
         while (iterationCount < MAX_ITERATIONS) {
@@ -981,7 +981,6 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           if (madeProgress) {
             lastProgressPos = currentPos.clone();
             lastProgressTime = now;
-            lastMinedBlock = null; // Reset mining tracker on progress
           } else if (now - lastProgressTime > PROGRESS_TIMEOUT_MS) {
             // No progress for 1 second - stuck
             const distTraveled = startPos.distanceTo(currentPos);
@@ -1018,14 +1017,8 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           }
 
           const mineResult = await mineForwardsIfPossible(
-            bot, currentPos, forwardVec, selectMiningTool, allowMiningOf,
-            DIG_TIMEOUT_SECONDS, lastMinedBlock, now, MINING_SAME_BLOCK_TIMEOUT_MS
+            bot, currentPos, forwardVec, allowMiningOf, DIG_TIMEOUT_SECONDS
           );
-
-          // Update lastMinedBlock if the function provided an updated value
-          if (mineResult.updatedLastMinedBlock !== undefined) {
-            lastMinedBlock = mineResult.updatedLastMinedBlock;
-          }
 
           if (mineResult.error) {
             return createResponse(mineResult.error);
@@ -1284,8 +1277,12 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         .union([z.number(), z.string().transform(val => parseFloat(val))])
         .optional()
         .describe("Timeout for digging in seconds (default: 3). Use longer timeout (e.g. 10) for hard blocks like iron ore with stone pickaxe"),
+      allowedMiningToolsToMinedBlocks: z
+        .record(z.string(), z.array(z.string()))
+        .optional()
+        .describe("Optional tool-to-blocks mapping for auto-equipping tools: {wooden_pickaxe: ['dirt'], diamond_pickaxe: ['stone', 'iron_ore']}. If not provided, will use currently equipped tool."),
     },
-    async ({ x, y, z, timeoutSeconds }): Promise<McpResponse> => {
+    async ({ x, y, z, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }): Promise<McpResponse> => {
       const digTimeout = timeoutSeconds ?? 3;
       try {
         const blockPos = new Vec3(x, y, z);
@@ -1300,17 +1297,12 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
         // Check light level before digging
         const lightLevel = block.light;
 
-        // Check if we can dig it
-        if (!bot.canDigBlock(block)) {
-          const heldItem = bot.heldItem;
-          const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
-          return createResponse(
-            `Cannot dig ${block.name} at (${x}, ${y}, ${z}). Holding: ${toolInfo}. Block might be out of reach or require different tool.`
-          );
-        }
+        // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
+        const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout);
 
-        // Dig with timeout (use provided timeout or default 3s)
-        await digWithTimeout(bot, block, digTimeout);
+        if (!result.success) {
+          return createResponse(result.error || "Failed to mine block");
+        }
 
         let response = `Dug ${block.name} at (${x}, ${y}, ${z})`;
         // Add light level warning if it's dark
