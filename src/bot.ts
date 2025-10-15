@@ -654,31 +654,83 @@ async function walkForwardsIfPossible(
 async function jumpOverSmallObstacleIfPossible(
   bot: Bot,
   currentPos: Vec3,
-  forwardVec: Vec3
-): Promise<boolean> {
+  forwardVec: Vec3,
+  target: Vec3
+): Promise<{success: boolean, error?: string}> {
+  // Check all relevant blocks
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+  const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
+  const blockAheadHeadPlusOne = bot.blockAt(currentPos.offset(forwardVec.x, 2, forwardVec.z).floor());
+
+  // Build block situation string (used in all error messages)
+  const blockSituation = `Block ahead of feet: ${blockAheadFeet?.name || 'null'}, ` +
+    `ahead of head: ${blockAheadHead?.name || 'null'}, ` +
+    `above head: ${blockAboveHead?.name || 'null'}, ` +
+    `planned head dest (ahead+up): ${blockAheadHeadPlusOne?.name || 'null'}`;
 
   const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
   const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+  const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
+  const plannedHeadDestClear = !blockAheadHeadPlusOne || blockAheadHeadPlusOne.name === 'air';
 
-  // Check if we can jump over: feet blocked, head clear, room above
-  if (!feetClear && headClear) {
-    const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
-    const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
-
-    if (aboveHeadClear) {
-      bot.setControlState('jump', true);
-      bot.setControlState('forward', true);
-      await new Promise(r => setTimeout(r, 100));
-      bot.setControlState('jump', false);
-      bot.setControlState('forward', false);
-      await new Promise(r => setTimeout(r, 50));
-      return true;
-    }
+  // Early returns for conditions that prevent jumping
+  if (feetClear) {
+    return {
+      success: false,
+      error: `Jump not attempted: feet ahead are clear (no obstacle to jump over). ${blockSituation}`
+    };
   }
 
-  return false;
+  if (!headClear) {
+    return {
+      success: false,
+      error: `Jump not attempted: block ahead of head is not clear. ${blockSituation}`
+    };
+  }
+
+  if (!aboveHeadClear) {
+    return {
+      success: false,
+      error: `Jump not attempted: block above head is not clear (no room to jump). ${blockSituation}`
+    };
+  }
+
+  if (!plannedHeadDestClear) {
+    return {
+      success: false,
+      error: `Jump not attempted: planned head destination (ahead+up) is not clear. ${blockSituation}`
+    };
+  }
+
+  // All conditions met - attempt the jump
+  const startPos = currentPos.clone();
+  const startDist = startPos.distanceTo(target);
+
+  bot.setControlState('jump', true);
+  bot.setControlState('forward', true);
+  await new Promise(r => setTimeout(r, 100));
+  bot.setControlState('jump', false);
+  bot.setControlState('forward', false);
+  await new Promise(r => setTimeout(r, 50));
+
+  const endPos = bot.entity.position;
+  const endDist = endPos.distanceTo(target);
+  const progress = startDist - endDist;
+
+  // If we didn't make progress, the jump failed
+  if (progress < 0.3) {
+    const currentBlockAboveHead = bot.blockAt(endPos.offset(0, 1, 0).floor());
+    return {
+      success: false,
+      error: `Jump failed - made only ${progress.toFixed(2)} blocks progress. ` +
+        `Before: (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}), ` +
+        `After: (${Math.floor(endPos.x)}, ${Math.floor(endPos.y)}, ${Math.floor(endPos.z)}). ` +
+        `Block above bot head now: ${currentBlockAboveHead?.name || 'null'}. ${blockSituation}`
+    };
+  }
+
+  return {success: true};
 }
 
 async function mineForwardsIfPossible(
@@ -739,6 +791,10 @@ async function moveOneStep(
   const yaw = bot.entity.yaw;
   const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
 
+  // Collect error messages to provide detailed feedback
+  let jumpError: string | undefined;
+  let mineError: string | undefined;
+
   // Try walking forward
   if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
     const newPos = bot.entity.position;
@@ -748,11 +804,14 @@ async function moveOneStep(
   }
 
   // Try jumping over obstacle
-  if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
+  const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec, target);
+  if (jumpResult.success) {
     const newPos = bot.entity.position;
     const newDist = newPos.distanceTo(target);
     const movedCloser = Math.max(0, startDist - newDist);
     return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+  } else {
+    jumpError = jumpResult.error;
   }
 
   // Try mining forward
@@ -761,7 +820,7 @@ async function moveOneStep(
   );
 
   if (mineResult.error) {
-    return { blocksMined: mineResult.blocksMined, movedBlocksCloser: 0, pillaredUpBlocks: 0, error: mineResult.error };
+    mineError = mineResult.error;
   }
 
   if (mineResult.success && mineResult.blocksMined > 0) {
@@ -812,11 +871,15 @@ async function moveOneStep(
   }
 
   // Nothing worked - stuck
+  let stuckMessage = "Stuck: Cannot walk, jump, mine, or pillar.";
+  if (jumpError) stuckMessage += ` Jump: ${jumpError}`;
+  if (mineError) stuckMessage += ` Mine: ${mineError}`;
+
   return {
     blocksMined: 0,
     movedBlocksCloser: 0,
     pillaredUpBlocks: 0,
-    error: "Stuck: Cannot walk, jump, mine, or pillar. Path may be blocked."
+    error: stuckMessage
   };
 }
 
@@ -973,7 +1036,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
         const startY = Math.floor(bot.entity.position.y);
         let blocksPlaced = 0;
-        let digMessage = blocksDug > 0 ? ` (cleared ${blocksDug} blocks above first)` : '';
+        const digMessage = blocksDug > 0 ? ` (cleared ${blocksDug} blocks above first)` : '';
 
         for (let i = 0; i < height; i++) {
           const beforeY = Math.floor(bot.entity.position.y);
