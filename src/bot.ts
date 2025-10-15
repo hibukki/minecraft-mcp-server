@@ -723,7 +723,6 @@ function didArriveAtTarget(bot: Bot, target: Vec3): boolean {
 async function moveOneStep(
   bot: Bot,
   target: Vec3,
-  forwardVec: Vec3,
   allowPillarUpWith: string[],
   allowMiningOf: Record<string, string[]>,
   digTimeout: number
@@ -735,6 +734,10 @@ async function moveOneStep(
 }> {
   const currentPos = bot.entity.position;
   const startDist = currentPos.distanceTo(target);
+
+  // Calculate forward vector from bot's yaw (already looking at target)
+  const yaw = bot.entity.yaw;
+  const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
 
   // Try walking forward
   if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
@@ -1066,16 +1069,11 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             );
           }
 
-          // Look at target (so bot will look realistic)
+          // Look at target (so bot will look realistic and set yaw)
           await bot.lookAt(target, false);
 
-          // TODO: Remove this. moveOneStep already gets `target` so it can calculate the `forwardVec` if it needs to.
-          // Calculate forward vector
-          const yaw = bot.entity.yaw;
-          const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
-
           const stepResult = await moveOneStep(
-            bot, target, forwardVec,
+            bot, target,
             allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS
           );
 
@@ -1088,14 +1086,20 @@ function registerPositionTools(server: McpServer, bot: Bot) {
                               stepResult.pillaredUpBlocks > 0;
 
           if (!madeProgress) {
-            // TODO: When move-to exists, also return how many iterations were run, what total progress was made so far (blocksMined, movedBlocksCloser, ..).
-            // No progress - return error from step
-            return createResponse(stepResult.error || "Stuck at this iteration with no info from moveOneStep");
+            // Calculate progress stats
+            const distRemaining = bot.entity.position.distanceTo(target);
+            const distTraveled = startPos.distanceTo(bot.entity.position);
+
+            return createResponse(
+              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep"}. ` +
+              `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
+              `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+              `${distRemaining.toFixed(1)} blocks remaining to target.`
+            );
           }
         }
 
-        // Max iterations reached
-        // TODO: Only calculate these things once, and reuse them for the other errors, like in !madeProgress
+        // Max iterations reached - calculate progress stats (reusing same calculation as above)
         const distRemaining = bot.entity.position.distanceTo(target);
         const distTraveled = startPos.distanceTo(bot.entity.position);
         return createResponse(
