@@ -215,14 +215,14 @@ async function digWithTimeout(
 
 /**
  * Try to mine a single block using the provided tool-to-blocks mapping
- * Returns detailed error info if mining fails
+ * Returns detailed error info if mining fails, and count of blocks mined
  */
 async function tryMiningOneBlock(
   bot: mineflayer.Bot,
   block: any,
   allowedMiningToolsToMinedBlocks: Record<string, string[]>,
   digTimeout: number = 3
-): Promise<{success: boolean, error?: string}> {
+): Promise<{success: boolean, error?: string, blocksMined: number}> {
   const botPos = bot.entity.position;
   const blockPos = block.position;
   const distance = botPos.distanceTo(blockPos);
@@ -235,6 +235,7 @@ async function tryMiningOneBlock(
       if (!tool) {
         return {
           success: false,
+          blocksMined: 0,
           error: `Tool ${toolName} needed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) but not found in inventory`
         };
       }
@@ -248,6 +249,7 @@ async function tryMiningOneBlock(
     const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
     return {
       success: false,
+      blocksMined: 0,
       error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is not in allowedMiningToolsToMinedBlocks. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks`
     };
   }
@@ -266,6 +268,7 @@ async function tryMiningOneBlock(
     const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
     return {
       success: false,
+      blocksMined: 0,
       error: `Cannot dig ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Block might be out of reach or require different tool`
     };
   }
@@ -273,13 +276,14 @@ async function tryMiningOneBlock(
   // Try to dig with timeout
   try {
     await digWithTimeout(bot, block, digTimeout);
-    return {success: true};
+    return {success: true, blocksMined: 1};
   } catch (digError) {
     bot.stopDigging();
     const heldItem = bot.heldItem;
     const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
     return {
       success: false,
+      blocksMined: 0,
       error: `Failed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Error: ${formatError(digError)}`
     };
   }
@@ -678,23 +682,26 @@ async function mineForwardsIfPossible(
   forwardVec: Vec3,
   allowMiningOf: Record<string, string[]>,
   DIG_TIMEOUT_SECONDS: number
-): Promise<{success: boolean, error?: string}> {
+): Promise<{success: boolean, error?: string, blocksMined: number}> {
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  let totalBlocksMined = 0;
 
   // Try mining head block first
   if (blockAheadHead && blockAheadHead.name !== 'air' && blockAheadHead.name !== 'water' && blockAheadHead.name !== 'lava') {
     const result = await tryMiningOneBlock(bot, blockAheadHead, allowMiningOf, DIG_TIMEOUT_SECONDS);
-    if (!result.success) return result;
+    totalBlocksMined += result.blocksMined;
+    if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
   // Try mining feet block
   if (blockAheadFeet && blockAheadFeet.name !== 'air' && blockAheadFeet.name !== 'water' && blockAheadFeet.name !== 'lava') {
     const result = await tryMiningOneBlock(bot, blockAheadFeet, allowMiningOf, DIG_TIMEOUT_SECONDS);
-    if (!result.success) return result;
+    totalBlocksMined += result.blocksMined;
+    if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
-  return {success: true};
+  return {success: true, blocksMined: totalBlocksMined};
 }
 
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
@@ -931,6 +938,7 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
         let lastProgressPos = startPos.clone();
         let lastProgressTime = startTime;
         let blocksMined = 0;
+        let lastBlocksMined = 0;
         let iterationCount = 0;
         const MAX_ITERATIONS = 1000; // Safety limit
         const HORIZONTAL_THRESHOLD = 1.5;
@@ -973,14 +981,16 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
             );
           }
 
-          // Check progress toward target
+          // Check progress toward target (either moved closer OR mined more blocks)
           const distToTarget = currentPos.distanceTo(target);
           const lastDistToTarget = lastProgressPos.distanceTo(target);
-          const madeProgress = distToTarget < lastDistToTarget - 0.3; // Getting closer to target
+          const movedCloser = distToTarget < lastDistToTarget - 0.3;
+          const minedMoreBlocks = blocksMined > lastBlocksMined;
 
-          if (madeProgress) {
+          if (movedCloser || minedMoreBlocks) {
             lastProgressPos = currentPos.clone();
             lastProgressTime = now;
+            lastBlocksMined = blocksMined;
           } else if (now - lastProgressTime > PROGRESS_TIMEOUT_MS) {
             // No progress for 1 second - stuck
             const distTraveled = startPos.distanceTo(currentPos);
@@ -1025,8 +1035,7 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           }
 
           if (mineResult.success) {
-            blocksMined++;
-            lastProgressTime = Date.now();
+            blocksMined += mineResult.blocksMined;
             await walkForwardsIfPossible(bot, currentPos, forwardVec);
             continue;
           }
