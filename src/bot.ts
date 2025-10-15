@@ -843,11 +843,15 @@ async function mineForwardsIfPossible(
   currentPos: Vec3,
   forwardVec: Vec3,
   allowMiningOf: Record<string, string[]>,
-  DIG_TIMEOUT_SECONDS: number
+  DIG_TIMEOUT_SECONDS: number,
+  returnErrorIfNothingMined: boolean = true
 ): Promise<MineForwardResult> {
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
   let totalBlocksMined = 0;
+
+  const botPos = bot.entity.position;
+  const botBottomHalf = `(${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`;
 
   // Try mining head block first
   if (blockAheadHead && blockAheadHead.name !== 'air' && blockAheadHead.name !== 'water' && blockAheadHead.name !== 'lava') {
@@ -861,6 +865,23 @@ async function mineForwardsIfPossible(
     const result = await tryMiningOneBlock(bot, blockAheadFeet, allowMiningOf, DIG_TIMEOUT_SECONDS);
     totalBlocksMined += result.blocksMined;
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
+  }
+
+  // If we mined nothing and should return an error
+  if (totalBlocksMined === 0 && returnErrorIfNothingMined) {
+    // Build detailed error message about what blocks we tried to mine
+    const headInfo = blockAheadHead
+      ? `${blockAheadHead.name} at (${Math.floor(blockAheadHead.position.x)}, ${Math.floor(blockAheadHead.position.y)}, ${Math.floor(blockAheadHead.position.z)})`
+      : 'air or null';
+    const feetInfo = blockAheadFeet
+      ? `${blockAheadFeet.name} at (${Math.floor(blockAheadFeet.position.x)}, ${Math.floor(blockAheadFeet.position.y)}, ${Math.floor(blockAheadFeet.position.z)})`
+      : 'air or null';
+
+    return {
+      success: false,
+      blocksMined: 0,
+      error: `No blocks mined. Bot bottom-half at ${botBottomHalf}. Block ahead of head: ${headInfo}. Block ahead of feet: ${feetInfo}. allowMiningOf is ${Object.keys(allowMiningOf).length === 0 ? 'empty (no mining allowed)' : `{${Object.keys(allowMiningOf).join(', ')}}`}`
+    };
   }
 
   return {success: true, blocksMined: totalBlocksMined};
@@ -944,8 +965,6 @@ async function moveOneStep(
 
   if (!mineResult.success) {
     errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
-  } else if (mineResult.blocksMined === 0) {
-    errorsFromPreviousSteps.push("Mine: no blocks ahead to mine");
   }
 
   if (mineResult.success && mineResult.blocksMined > 0) {
