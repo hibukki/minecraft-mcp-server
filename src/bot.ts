@@ -509,6 +509,44 @@ function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
 
 // ========== Position and Movement Tools ==========
 
+// Helper functions for pillar-up movement
+async function jumpAndWaitToBeInAir(bot: mineflayer.Bot): Promise<void> {
+  bot.setControlState('jump', true);
+  await new Promise(r => setTimeout(r, 100)); // Initial jump delay
+  await new Promise(r => setTimeout(r, 200)); // Wait to be airborne
+}
+
+async function waitToLandFromAir(bot: mineflayer.Bot): Promise<void> {
+  bot.setControlState('jump', false);
+  await new Promise(r => setTimeout(r, 300)); // Wait to land
+}
+
+async function pillarUpOneBlock(bot: mineflayer.Bot): Promise<boolean> {
+  await jumpAndWaitToBeInAir(bot);
+
+  const currentPos = bot.entity.position;
+  const belowPos = currentPos.offset(0, -1, 0).floor();
+  const blockBelow = bot.blockAt(belowPos);
+
+  if (blockBelow && blockBelow.name === 'air') {
+    const refBlock = bot.blockAt(belowPos.offset(0, -1, 0));
+    if (refBlock && refBlock.name !== 'air') {
+      try {
+        await bot.placeBlock(refBlock, new Vec3(0, 1, 0));
+        await waitToLandFromAir(bot);
+        return true;
+      } catch (placeError) {
+        log('warn', `Failed to place pillar block: ${formatError(placeError)}`);
+        await waitToLandFromAir(bot);
+        return false;
+      }
+    }
+  }
+
+  await waitToLandFromAir(bot);
+  return false;
+}
+
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
   server.tool(
     "get-position",
@@ -667,33 +705,11 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
         for (let i = 0; i < height; i++) {
           const beforeY = Math.floor(bot.entity.position.y);
 
-          // Jump
-          bot.setControlState("jump", true);
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
-          // Wait to be in the air
-          await new Promise((resolve) => setTimeout(resolve, 200));
-
-          // Place block below
-          const belowPos = bot.entity.position.offset(0, -1, 0).floor();
-          const blockBelow = bot.blockAt(belowPos);
-
-          if (blockBelow && blockBelow.name === "air") {
-            try {
-              const referenceBlock = bot.blockAt(belowPos.offset(0, -1, 0));
-              if (referenceBlock && referenceBlock.name !== "air") {
-                await bot.placeBlock(referenceBlock, new Vec3(0, 1, 0));
-                blocksPlaced++;
-              }
-            } catch (placeError) {
-              log("warn", `Failed to place block: ${formatError(placeError)}`);
-            }
+          // Use the pillarUpOneBlock helper
+          const placed = await pillarUpOneBlock(bot);
+          if (placed) {
+            blocksPlaced++;
           }
-
-          bot.setControlState("jump", false);
-
-          // Wait to land
-          await new Promise((resolve) => setTimeout(resolve, 300));
 
           // Check if we actually moved up
           const afterY = Math.floor(bot.entity.position.y);
@@ -734,6 +750,278 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       } catch (error) {
         bot.setControlState("jump", false);
         return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "move-to",
+    "Move to a target position using yaw-based movement with auto-mining and optional pillar-up",
+    {
+      x: z.number().describe("Target X coordinate"),
+      y: z.number().describe("Target Y coordinate"),
+      z: z.number().describe("Target Z coordinate"),
+      allowPillarUpWith: z
+        .array(z.string())
+        .optional()
+        .describe("Blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
+      allowMiningOf: z
+        .record(z.string(), z.array(z.string()))
+        .optional()
+        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+    },
+    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {} }): Promise<McpResponse> => {
+      const startPos = bot.entity.position.clone();
+      const startTime = Date.now();
+      const target = new Vec3(x, y, z);
+      const DIG_TIMEOUT_SECONDS = 3;
+
+      // Helper: Select appropriate mining tool for a block
+      const selectMiningTool = (blockName: string) => {
+        for (const [toolName, blockNames] of Object.entries(allowMiningOf)) {
+          if (blockNames.includes(blockName)) {
+            const tool = bot.inventory.items().find(item => item.name === toolName);
+            if (!tool) {
+              throw new Error(`Tool ${toolName} needed to mine ${blockName} but not found in inventory`);
+            }
+            return tool;
+          }
+        }
+        return null; // No tool configured for this block
+      };
+
+      try {
+        // ===== MAIN MOVEMENT LOOP =====
+        let lastProgressPos = startPos.clone();
+        let lastProgressTime = startTime;
+        let lastMinedBlock: {name: string, pos: Vec3, startTime: number} | null = null;
+        let blocksMined = 0;
+        let iterationCount = 0;
+        const MAX_ITERATIONS = 1000; // Safety limit
+        const HORIZONTAL_THRESHOLD = 1.5;
+        const VERTICAL_THRESHOLD = 1.0;
+        const PROGRESS_TIMEOUT_MS = 1000;
+        const MINING_SAME_BLOCK_TIMEOUT_MS = 5000;
+        const TOTAL_TIMEOUT_MS = 10000;
+
+        while (iterationCount < MAX_ITERATIONS) {
+          iterationCount++;
+          const currentPos = bot.entity.position;
+          const now = Date.now();
+
+          // Calculate yaw and forward vector once per iteration
+          const yaw = bot.entity.yaw;
+          const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
+
+          // Check if we've reached the target
+          const horizontalDist = Math.sqrt(
+            Math.pow(currentPos.x - x, 2) + Math.pow(currentPos.z - z, 2)
+          );
+          const verticalDist = Math.abs(currentPos.y - y);
+
+          if (horizontalDist <= HORIZONTAL_THRESHOLD && verticalDist <= VERTICAL_THRESHOLD) {
+            const totalDist = startPos.distanceTo(currentPos);
+            const timeElapsed = ((now - startTime) / 1000).toFixed(1);
+            return createResponse(
+              `Reached target (${x}, ${y}, ${z}) from (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}). ` +
+              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${blocksMined} blocks.`
+            );
+          }
+
+          // Check total timeout (not an error - just opportunity to replan)
+          if (now - startTime > TOTAL_TIMEOUT_MS) {
+            const distRemaining = currentPos.distanceTo(target);
+            const distTraveled = startPos.distanceTo(currentPos);
+            return createResponse(
+              `Timeout after ${(TOTAL_TIMEOUT_MS / 1000).toFixed(0)}s. Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
+              `mined ${blocksMined} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
+              `Call move-to again to continue (not stuck, just giving you a chance to change plan).`
+            );
+          }
+
+          // Check progress toward target
+          const distToTarget = currentPos.distanceTo(target);
+          const lastDistToTarget = lastProgressPos.distanceTo(target);
+          const madeProgress = distToTarget < lastDistToTarget - 0.3; // Getting closer to target
+
+          if (madeProgress) {
+            lastProgressPos = currentPos.clone();
+            lastProgressTime = now;
+            lastMinedBlock = null; // Reset mining tracker on progress
+          } else if (now - lastProgressTime > PROGRESS_TIMEOUT_MS) {
+            // No progress for 1 second - stuck
+            const distTraveled = startPos.distanceTo(currentPos);
+
+            // Check what's blocking us
+            const checkPosLow = currentPos.offset(forwardVec.x, 0, forwardVec.z).floor();
+            const checkPosHigh = currentPos.offset(forwardVec.x, 1, forwardVec.z).floor();
+            const blockBottom = bot.blockAt(checkPosLow);
+            const blockTop = bot.blockAt(checkPosHigh);
+
+            const blocksDesc = [
+              blockBottom && blockBottom.name !== 'air' ? `bottom: ${blockBottom.name}` : null,
+              blockTop && blockTop.name !== 'air' ? `top: ${blockTop.name}` : null
+            ].filter(Boolean).join(', ');
+
+            return createResponse(
+              `Stuck walking forward: No progress for ${PROGRESS_TIMEOUT_MS}ms. ` +
+              `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
+              `Target: (${x}, ${y}, ${z}), Distance remaining: ${distToTarget.toFixed(1)} blocks. ` +
+              `Distance traveled: ${distTraveled.toFixed(1)} blocks. Mined ${blocksMined} blocks. ` +
+              (blocksDesc ? `Blocks in front: ${blocksDesc}. ` : '') +
+              `Suggestion: Add these blocks to allowMiningOf or navigate around.`
+            );
+          }
+
+          // Check if mining same block too long
+          if (bot.targetDigBlock) {
+            const diggingBlock = bot.targetDigBlock;
+            if (lastMinedBlock && lastMinedBlock.pos.equals(diggingBlock.position)) {
+              if (now - lastMinedBlock.startTime > MINING_SAME_BLOCK_TIMEOUT_MS) {
+                return createResponse(
+                  `Stuck mining ${diggingBlock.name} at (${diggingBlock.position.x}, ${diggingBlock.position.y}, ${diggingBlock.position.z}) ` +
+                  `for ${((now - lastMinedBlock.startTime) / 1000).toFixed(1)}s. ` +
+                  `Tool: ${bot.heldItem?.name || 'none'}. Suggestion: Wrong tool or block too hard to mine.`
+                );
+              }
+            } else {
+              lastMinedBlock = {
+                name: diggingBlock.name,
+                pos: diggingBlock.position.clone(),
+                startTime: now
+              };
+            }
+          }
+
+          // ===== VERTICAL MOVEMENT: Pillar up if target above us =====
+          if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
+            if (allowPillarUpWith.length === 0) {
+              return createResponse(
+                `Target is ${verticalDist.toFixed(1)} blocks above at (${x}, ${y}, ${z}). ` +
+                `Current: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
+                `Need blocks for pillaring. Provide allowPillarUpWith parameter (e.g., ['cobblestone', 'dirt']).`
+              );
+            }
+
+            // Find and equip pillar block
+            const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
+            if (!pillarBlock) {
+              return createResponse(
+                `Need blocks for pillaring: ${allowPillarUpWith.join(', ')}. None found in inventory.`
+              );
+            }
+
+            await bot.equip(pillarBlock, 'hand');
+            await pillarUpOneBlock(bot);
+            continue; // Re-check distances after pillaring
+          }
+
+          // ===== HORIZONTAL MOVEMENT: Look at target and move forward =====
+          await bot.lookAt(target, false); // Yaw only (no pitch forcing)
+
+          // Check blocks directly in front at feet and head height
+          const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+          const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+
+          const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
+          const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+
+          // 1. If path is completely clear, just walk (no jumping or mining)
+          if (feetClear && headClear) {
+            bot.setControlState('forward', true);
+            await new Promise(r => setTimeout(r, 100));
+            bot.setControlState('forward', false);
+            await new Promise(r => setTimeout(r, 50));
+            continue;
+          }
+
+          // 2. Check if we can jump over the obstacle
+          if (!feetClear && headClear) {
+            // Obstacle at feet level but head is clear
+            // Check if we have room to jump: block above our head must be air
+            const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
+            const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
+
+            if (aboveHeadClear) {
+              // Can jump over
+              bot.setControlState('jump', true);
+              bot.setControlState('forward', true);
+              await new Promise(r => setTimeout(r, 100));
+              bot.setControlState('jump', false);
+              bot.setControlState('forward', false);
+              await new Promise(r => setTimeout(r, 50));
+              continue;
+            }
+          }
+
+          // 3. Try to mine obstacles (fallback when can't walk or jump)
+          const obstaclesAhead = [blockAheadFeet, blockAheadHead].filter(
+            block => block && block.name !== 'air' && block.name !== 'water' && block.name !== 'lava'
+          );
+
+          // Try to mine obstacles directly in front
+          for (const obstacle of obstaclesAhead) {
+            if (!obstacle) continue; // TypeScript null check
+            const tool = selectMiningTool(obstacle.name);
+            if (tool) {
+              // Mine this obstacle
+              await bot.equip(tool, 'hand');
+
+              // Look at the obstacle before mining
+              await bot.lookAt(obstacle.position.offset(0.5, 0.5, 0.5), true);
+
+              // Check if we can dig this block (handles both distance and reachability)
+              if (!bot.canDigBlock(obstacle)) {
+                // Can't dig - skip to next block
+                continue;
+              }
+
+              try {
+                await digWithTimeout(bot, obstacle, DIG_TIMEOUT_SECONDS);
+                // Successfully mined - count as progress
+                blocksMined++;
+                lastProgressTime = Date.now();
+                lastMinedBlock = null; // Reset mining tracker after successful mine
+                // Break out to move forward
+                break;
+              } catch (digError) {
+                bot.stopDigging();
+                return createResponse(
+                  `Failed to mine ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}): ` +
+                  `${formatError(digError)}`
+                );
+              }
+            } else if (Object.keys(allowMiningOf).length > 0) {
+              // allowMiningOf provided but block not in list
+              return createResponse(
+                `Obstacle ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}) ` +
+                `is blocking path but not in allowMiningOf. Add it to allowMiningOf or navigate around.`
+              );
+            }
+            // else: no mining configured, try to walk through/jump over
+          }
+
+          // Fallback: If we couldn't mine (no tools configured or other reason), just move forward
+          bot.setControlState('forward', true);
+          await new Promise(r => setTimeout(r, 100));
+          bot.setControlState('forward', false);
+
+          await new Promise(r => setTimeout(r, 50)); // Small pause between iterations
+        }
+
+        // Max iterations exceeded
+        return createResponse(
+          `Failed to reach target after ${MAX_ITERATIONS} iterations. ` +
+          `Current: (${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}), ` +
+          `Target: (${x}, ${y}, ${z}). May be stuck in complex terrain.`
+        );
+
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      } finally {
+        // Always clean up control states
+        bot.setControlState('forward', false);
+        bot.setControlState('jump', false);
       }
     }
   );
