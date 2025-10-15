@@ -761,15 +761,18 @@ async function mineForwardsIfPossible(
   return {success: true, blocksMined: totalBlocksMined};
 }
 
-function didArriveAtTarget(bot: Bot, target: Vec3): boolean {
-  const HORIZONTAL_THRESHOLD = 1.5;
-  const VERTICAL_THRESHOLD = 1.0;
+function didArriveAtTarget(bot: Bot, target: Vec3): {arrived: boolean, distance: number} {
+  const DISTANCE_THRESHOLD = 1.5;
+  const VERTICAL_THRESHOLD = 0;
   const currentPos = bot.entity.position;
-  const horizontalDist = Math.sqrt(
-    Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
-  );
+  const distance = currentPos.distanceTo(target);
   const verticalDist = Math.abs(currentPos.y - target.y);
-  return horizontalDist <= HORIZONTAL_THRESHOLD && verticalDist <= VERTICAL_THRESHOLD;
+  const arrived = distance <= DISTANCE_THRESHOLD && verticalDist <= VERTICAL_THRESHOLD;
+
+  return {
+    arrived,
+    distance
+  };
 }
 
 async function moveOneStep(
@@ -1138,12 +1141,14 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
         for (let iteration = 0; iteration < maxIterations; iteration++) {
           // Check if we've reached the target
-          if (didArriveAtTarget(bot, target)) {
+          const arrivalCheck = didArriveAtTarget(bot, target);
+          if (arrivalCheck.arrived) {
             const totalDist = startPos.distanceTo(bot.entity.position);
             const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
             return createResponse(
               `Reached target (${x}, ${y}, ${z}) from (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}). ` +
-              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.`
+              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks. ` +
+              `Final distance to target: ${arrivalCheck.distance.toFixed(2)} blocks.`
             );
           }
 
@@ -1168,24 +1173,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const distRemaining = bot.entity.position.distanceTo(target);
             const distTraveled = startPos.distanceTo(bot.entity.position);
 
-            // If we're close to target, consider it "close enough" rather than "stuck"
-            const currentPos = bot.entity.position;
-            const horizontalDist = Math.sqrt(
-              Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
-            );
-            const verticalDist = Math.abs(currentPos.y - target.y);
-
-            if (horizontalDist <= 2.0 && verticalDist <= 1.5) {
-              return createResponse(
-                `Close enough to target (within ${distRemaining.toFixed(1)} blocks). ` +
-                `Horizontal: ${horizontalDist.toFixed(1)} blocks, Vertical: ${verticalDist.toFixed(1)} blocks. ` +
-                `Cannot get closer: ${stepResult.error || "unknown reason"}. ` +
-                `Progress: traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks.`
-              );
-            }
-
             return createResponse(
-              `${stepResult.error || "Stuck with no progress (unknown reason)"}. ` +
+              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep"}. ` +
               `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
               `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
               `${distRemaining.toFixed(1)} blocks remaining to target.`
