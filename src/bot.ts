@@ -628,6 +628,75 @@ async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
   return false;
 }
 
+/**
+ * Try to pillar up one block, handling all validation and errors
+ * Returns detailed error info if pillaring fails
+ */
+async function tryPillaringUp(
+  bot: Bot,
+  target: Vec3,
+  allowPillarUpWith: string[]
+): Promise<{success: boolean, error?: string, pillaredUpBlocks: number, movedBlocksCloser: number}> {
+  const currentPos = bot.entity.position;
+  const startDist = currentPos.distanceTo(target);
+  const verticalDist = Math.abs(currentPos.y - target.y);
+
+  // Check if we should pillar (target is above)
+  const VERTICAL_THRESHOLD = 1.0;
+  if (target.y <= currentPos.y + 1 || verticalDist <= VERTICAL_THRESHOLD) {
+    return {
+      success: false,
+      error: `Target not above us (vertical dist: ${verticalDist.toFixed(1)})`,
+      pillaredUpBlocks: 0,
+      movedBlocksCloser: 0
+    };
+  }
+
+  // Check if blocks provided
+  if (allowPillarUpWith.length === 0) {
+    return {
+      success: false,
+      error: `Target is ${verticalDist.toFixed(1)} blocks above but no allowPillarUpWith blocks provided`,
+      pillaredUpBlocks: 0,
+      movedBlocksCloser: 0
+    };
+  }
+
+  // Find pillar block in inventory
+  const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
+  if (!pillarBlock) {
+    return {
+      success: false,
+      error: `Need blocks ${allowPillarUpWith.join(', ')} but none found in inventory`,
+      pillaredUpBlocks: 0,
+      movedBlocksCloser: 0
+    };
+  }
+
+  // Equip and pillar
+  await bot.equip(pillarBlock, 'hand');
+  const pillared = await pillarUpOneBlock(bot);
+
+  const newPos = bot.entity.position;
+  const newDist = newPos.distanceTo(target);
+  const movedCloser = Math.max(0, startDist - newDist);
+
+  if (pillared) {
+    return {
+      success: true,
+      pillaredUpBlocks: 1,
+      movedBlocksCloser: movedCloser
+    };
+  } else {
+    return {
+      success: false,
+      error: `Failed to pillar up (target ${verticalDist.toFixed(1)} blocks above)`,
+      pillaredUpBlocks: 0,
+      movedBlocksCloser: 0
+    };
+  }
+}
+
 // Helper functions for move-to horizontal movement
 async function walkForwardsIfPossible(
   bot: Bot,
@@ -837,64 +906,25 @@ async function moveOneStep(
   }
 
   // Try pillaring up if target is above
-  const VERTICAL_THRESHOLD = 1.0;
-  const verticalDist = Math.abs(currentPos.y - target.y);
-  if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
-    if (allowPillarUpWith.length === 0) {
-      errorsFromPreviousSteps.push(
-        `Pillar: Target is ${verticalDist.toFixed(1)} blocks above but no allowPillarUpWith blocks provided`
-      );
-      return {
-        blocksMined: 0,
-        movedBlocksCloser: 0,
-        pillaredUpBlocks: 0,
-        error: errorsFromPreviousSteps.join("; ")
-      };
-    }
+  const pillarResult = await tryPillaringUp(bot, target, allowPillarUpWith);
 
-    const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
-    if (!pillarBlock) {
-      errorsFromPreviousSteps.push(
-        `Pillar: Need blocks ${allowPillarUpWith.join(', ')} but none found in inventory`
-      );
-      return {
-        blocksMined: 0,
-        movedBlocksCloser: 0,
-        pillaredUpBlocks: 0,
-        error: errorsFromPreviousSteps.join("; ")
-      };
-    }
-
-    await bot.equip(pillarBlock, 'hand');
-    const pillared = await pillarUpOneBlock(bot); // TODO: pillarUpOneBlock should handle all pillar-related tests (like "do we have the correct block") and errors. moveOneStep can decide if we want to pillar (is the target up?) but shouldn't know how to pillar
-    const newPos = bot.entity.position;
-    const newDist = newPos.distanceTo(target);
-    const movedCloser = Math.max(0, startDist - newDist);
-
-    if (pillared) {
-      return {
-        blocksMined: 0,
-        movedBlocksCloser: movedCloser,
-        pillaredUpBlocks: 1
-      };
-    } else {
-      errorsFromPreviousSteps.push(
-        `Pillar: Failed to pillar up (target ${verticalDist.toFixed(1)} blocks above)`
-      );
-      return {
-        blocksMined: 0,
-        movedBlocksCloser: 0,
-        pillaredUpBlocks: 0,
-        error: errorsFromPreviousSteps.join("; ")
-      };
-    }
+  if (pillarResult.error) {
+    errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
   }
 
-  if (errorsFromPreviousSteps.length == 0) {
-    // TODO: Crash. We should always have error details
+  if (pillarResult.success) {
+    return {
+      blocksMined: 0,
+      movedBlocksCloser: pillarResult.movedBlocksCloser,
+      pillaredUpBlocks: pillarResult.pillaredUpBlocks
+    };
   }
 
-  // Stuck
+  // Stuck - this should never happen since we should have collected errors from all attempts
+  if (errorsFromPreviousSteps.length === 0) {
+    throw new Error("BUG: moveOneStep returned with no progress and no error details. This should never happen.");
+  }
+
   return {
     blocksMined: 0,
     movedBlocksCloser: 0,
