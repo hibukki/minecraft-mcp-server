@@ -4,8 +4,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import mineflayer from "mineflayer";
-import pathfinderPkg from "mineflayer-pathfinder";
-const { pathfinder, Movements, goals } = pathfinderPkg;
 import { Vec3 } from "vec3";
 import minecraftData from "minecraft-data";
 import yargs from "yargs";
@@ -139,88 +137,6 @@ const messageStore = new MessageStore();
 // ========== Progress Monitoring Helpers ==========
 
 /**
- * Wraps pathfinding with progress monitoring
- * Fails fast if bot gets stuck
- */
-async function gotoAndVerifyProgress(
-  bot: mineflayer.Bot,
-  goal: any,
-  options: {
-    checkIntervalSeconds?: number;
-    minBlocksPerCheck?: number;
-    graceChecks?: number;
-    timeoutSeconds?: number;
-  } = {}
-): Promise<void> {
-  const {
-    checkIntervalSeconds = 1,
-    minBlocksPerCheck = 1,
-    graceChecks = 1,
-    timeoutSeconds = 10,
-  } = options;
-
-  const startPos = bot.entity.position.clone();
-  const startTime = Date.now();
-  let lastCheckPos = startPos.clone();
-  let checksCount = 0;
-  let stuckError: Error | null = null;
-
-  const pathfinderPromise = bot.pathfinder.goto(goal);
-
-  const progressCheck = setInterval(() => {
-    checksCount++;
-
-    // Grace period
-    if (checksCount <= graceChecks) {
-      lastCheckPos = bot.entity.position.clone();
-      return;
-    }
-
-    const currentPos = bot.entity.position;
-    const movedSinceLastCheck = lastCheckPos.distanceTo(currentPos);
-    const elapsedSeconds = (Date.now() - startTime) / 1000;
-
-    // Check timeout
-    if (elapsedSeconds > timeoutSeconds) {
-      const totalMoved = startPos.distanceTo(currentPos);
-      clearInterval(progressCheck);
-      bot.pathfinder.stop();
-      stuckError = new Error(
-        `Pathfinding timeout after ${timeoutSeconds}s. ` +
-        `Moved ${totalMoved.toFixed(1)} blocks total. ` +
-        `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
-        `Progress made - consider calling again if making progress.`
-      );
-      return;
-    }
-
-    // Check if stuck
-    if (movedSinceLastCheck < minBlocksPerCheck) {
-      const totalMoved = startPos.distanceTo(currentPos);
-      clearInterval(progressCheck);
-      bot.pathfinder.stop();
-      stuckError = new Error(
-        `Pathfinding stuck: moved ${movedSinceLastCheck.toFixed(1)} blocks in last ${checkIntervalSeconds}s. ` +
-        `Total progress: ${totalMoved.toFixed(1)} blocks. ` +
-        `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)})`
-      );
-    }
-
-    lastCheckPos = currentPos.clone();
-  }, checkIntervalSeconds * 1000);
-
-  try {
-    await pathfinderPromise;
-    clearInterval(progressCheck);
-    if (stuckError) throw stuckError;
-  } catch (error) {
-    clearInterval(progressCheck);
-    if (stuckError) throw stuckError;
-    throw error;
-  }
-}
-
-/**
  * Wraps bot.dig with progress monitoring
  * Checks every few seconds if we're still actively digging
  */
@@ -305,7 +221,6 @@ function setupBot(argv: any): mineflayer.Bot {
     host: argv.host,
     port: argv.port,
     username: argv.username,
-    plugins: { pathfinder },
   };
 
   // Create a bot instance
@@ -313,16 +228,6 @@ function setupBot(argv: any): mineflayer.Bot {
 
   // Set up the bot when it spawns
   bot.once("spawn", async () => {
-    // Set up pathfinder movements
-    const mcData = minecraftData(bot.version);
-    const defaultMove = new Movements(bot, mcData);
-
-    // Configure pathfinder to avoid unnecessary jumping
-    defaultMove.canDig = false; // Don't dig blocks while pathfinding
-    defaultMove.allow1by1towers = false; // Don't build towers
-
-    bot.pathfinder.setMovements(defaultMove);
-
     bot.chat("LLM-powered bot ready to receive instructions!");
     log(
       "info",
@@ -500,13 +405,9 @@ function registerSmeltingTools(server: McpServer, bot: mineflayer.Bot) {
 
         // Move to furnace if needed
         if (!bot.canSeeBlock(furnace)) {
-          const goal = new goals.GoalNear(
-            furnace.position.x,
-            furnace.position.y,
-            furnace.position.z,
-            2
+          return createResponse(
+            `Furnace found at (${furnace.position.x}, ${furnace.position.y}, ${furnace.position.z}) but it's not visible. Move closer manually using move-in-direction tool.`
           );
-          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
         }
 
         // Open the furnace
@@ -631,146 +532,8 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
     }
   );
 
-  server.tool(
-    "move-to-position",
-    "Move the bot to a specific position",
-    {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
-      range: z
-        .number()
-        .optional()
-        .describe("How close to get to the target (default: 1)"),
-    },
-    async ({ x, y, z, range = 1 }): Promise<McpResponse> => {
-      try {
-        const targetPos = new Vec3(x, y, z);
-        let lastCheckPos = bot.entity.position.clone();
-        let stuckError: Error | null = null;
-
-        const goal = new goals.GoalNear(x, y, z, range);
-        const pathfinderPromise = bot.pathfinder.goto(goal);
-
-        // Check progress every second (after initial 1 second grace period)
-        let checksCount = 0;
-        const progressCheckInterval = setInterval(() => {
-          checksCount++;
-          if (checksCount === 1) {
-            // Skip first check to give pathfinding time to start
-            lastCheckPos = bot.entity.position.clone();
-            return;
-          }
-
-          const currentPos = bot.entity.position;
-          const currentDistance = currentPos.distanceTo(targetPos);
-          const progressInLastSecond = lastCheckPos.distanceTo(currentPos);
-
-          // Check if completely stuck (no movement at all - hopping in place)
-          if (progressInLastSecond < 0.1) {
-            clearInterval(progressCheckInterval);
-            bot.pathfinder.stop();
-
-            const yDiff = y - Math.floor(currentPos.y);
-
-            // If trying to go up, only suggest pillar-up
-            if (yDiff >= 3) {
-              stuckError = new Error(`Movement stuck: Need to go up ${yDiff} blocks. Use pillar-up tool.`);
-            } else {
-              // For other cases, show full diagnostics
-              let errorMsg = `Movement stuck: Bot is hopping in place with no progress. ` +
-                `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
-                `distance to target: ${currentDistance.toFixed(1)} blocks.\n`;
-
-              if (yDiff <= -3) {
-                errorMsg += `Need to go down ${-yDiff} blocks.`;
-              }
-
-              stuckError = new Error(errorMsg);
-            }
-          } else if (progressInLastSecond < 1) {
-            clearInterval(progressCheckInterval);
-            bot.pathfinder.stop();
-
-            // Gather diagnostic info about surrounding blocks
-            const dirX = Math.sign(x - currentPos.x);
-            const dirZ = Math.sign(z - currentPos.z);
-            const blocksAhead: string[] = [];
-            const blocksAbove: string[] = [];
-
-            // Check blocks at head level in direction of target (these block horizontal movement)
-            for (let offset = 0; offset <= 1; offset++) {
-              const checkPos = currentPos.offset(dirX * offset, 0, dirZ * offset).floor();
-              const block = bot.blockAt(checkPos);
-              if (block && block.name !== 'air') {
-                blocksAhead.push(`${block.name} at (${checkPos.x}, ${checkPos.y}, ${checkPos.z})`);
-              }
-            }
-
-            // Check blocks above head (Y+1 and Y+2)
-            for (let yOffset = 1; yOffset <= 2; yOffset++) {
-              const headBlock = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
-              if (headBlock && headBlock.name !== 'air') {
-                blocksAbove.push(`${headBlock.name} at Y+${yOffset}`);
-              }
-            }
-
-            const footBlock = bot.blockAt(currentPos.offset(0, -1, 0).floor());
-            const yDiff = y - Math.floor(currentPos.y);
-
-            let errorMsg = `Movement stuck: Only moved ${progressInLastSecond.toFixed(1)} blocks in 1 second. ` +
-              `Current position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
-              `distance remaining: ${currentDistance.toFixed(1)} blocks.\n`;
-
-            // Add specific diagnostics
-            if (blocksAhead.length > 0) {
-              errorMsg += `Blocks blocking path ahead: ${blocksAhead.join(', ')}. Consider digging or avoiding these.\n`;
-            }
-            if (blocksAbove.length > 0) {
-              errorMsg += `Blocks above head: ${blocksAbove.join(', ')}. This prevents movement - consider digging these.\n`;
-            }
-            if (footBlock?.name === 'air') {
-              errorMsg += `Standing over air - may be stuck on edge of hole or cliff.\n`;
-            }
-
-            // Suggest actions based on vertical difference
-            if (yDiff >= 3) {
-              errorMsg += `Need to go up ${yDiff} blocks. Consider using pillar-up tool.`;
-            } else if (yDiff <= -3) {
-              errorMsg += `Need to go down ${-yDiff} blocks. Consider digging down carefully.`;
-            } else if (blocksAhead.length === 0 && blocksAbove.length === 0) {
-              errorMsg += `No obvious obstacles detected. Pathfinding may be confused by terrain.`;
-            }
-
-            stuckError = new Error(errorMsg);
-          }
-
-          lastCheckPos = currentPos.clone();
-        }, 1000);
-
-        try {
-          await pathfinderPromise;
-          clearInterval(progressCheckInterval);
-
-          if (stuckError) {
-            throw stuckError;
-          }
-        } catch (error) {
-          clearInterval(progressCheckInterval);
-          if (stuckError) {
-            throw stuckError;
-          }
-          throw error;
-        }
-
-        return createResponse(
-          `Successfully moved to position near (${x}, ${y}, ${z})`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
-    }
-  );
+  // DISABLED: move-to-position tool (pathfinder removed)
+  // Use move-in-direction, jump, and pillar-up instead
 
   server.tool(
     "look-at",
@@ -1138,14 +901,8 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
 
           if (referenceBlock && referenceBlock.name !== "air") {
             if (!bot.canSeeBlock(referenceBlock)) {
-              // Try to move closer to see the block - with timeout & progress monitoring
-              const goal = new goals.GoalNear(
-                referencePos.x,
-                referencePos.y,
-                referencePos.z,
-                2
-              );
-              await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
+              // Block not visible - try next face
+              continue;
             }
 
             await bot.lookAt(placePos, true);
@@ -1200,43 +957,17 @@ function registerBlockTools(server: McpServer, bot: mineflayer.Bot) {
           );
         }
 
-        // Remember the currently held item before pathfinding
-        const heldItem = bot.heldItem;
-
         // Check light level before digging
         const lightLevel = block.light;
 
         if (!bot.canDigBlock(block) || !bot.canSeeBlock(block)) {
-          // Try to move closer to dig the block - with timeout & progress monitoring
-          const goal = new goals.GoalNear(x, y, z, 2);
-          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 10 });
-
-          // Re-equip the tool after pathfinding (pathfinder may change held item)
-          if (heldItem) {
-            await bot.equip(heldItem, "hand");
-          }
+          return createResponse(
+            `Block ${block.name} at (${x}, ${y}, ${z}) is not visible or cannot be dug. Move closer manually using move-in-direction tool.`
+          );
         }
 
         // Dig with timeout (use provided timeout or default 3s)
         await digWithTimeout(bot, block, digTimeout);
-
-        // Move to block location to pick up drops (need to be within ~1.5 blocks for auto-collection)
-        try {
-          const goal = new goals.GoalNear(x, y, z, 0.5);
-          await gotoAndVerifyProgress(bot, goal, { timeoutSeconds: 2 });
-        } catch (pickupError) {
-          log("warn", `Failed to move to collect drops: ${formatError(pickupError)}`);
-          // Continue anyway - drops may be collected passively
-        }
-
-        // Re-equip the tool after everything (pathfinding for drops may change held item)
-        if (heldItem) {
-          try {
-            await bot.equip(heldItem, "hand");
-          } catch (equipError) {
-            log("warn", `Failed to re-equip tool: ${formatError(equipError)}`);
-          }
-        }
 
         let response = `Dug ${block.name} at (${x}, ${y}, ${z})`;
         // Add light level warning if it's dark
