@@ -11,6 +11,7 @@
 - If you're not sure how to proceed, brainstorm 1-3 options of what to do
 - The character you control isn't fast enough to do things like jump-and-place-block.
 - Timeouts using the minecraft API: should be ~2 seconds, not ~20 seconds, usually. Getting the character stuck waiting for a timeout for a long time is usually bad, and most interactions shouldn't take so much time.
+  - If code is taking a long time to run (e.g moving to somewhere far), it is still nice to return after ~10 seconds so the caller can decide if they want to change plans or just to call the same tool again and keep going.
 - By default, the base is where the nearest crafting table is. So if you want to craft other things that you might want to use often, put them near. (not e.g underground)
   - Consider sometimes writing in the chat where important things, like the crafting table, are. You can later check the chat messages if you don't remember
 
