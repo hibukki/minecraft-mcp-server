@@ -547,6 +547,107 @@ async function pillarUpOneBlock(bot: mineflayer.Bot): Promise<boolean> {
   return false;
 }
 
+// Helper functions for move-to horizontal movement
+async function walkForwardsIfPossible(
+  bot: mineflayer.Bot,
+  currentPos: Vec3,
+  forwardVec: Vec3
+): Promise<boolean> {
+  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+
+  const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
+  const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+
+  if (feetClear && headClear) {
+    bot.setControlState('forward', true);
+    await new Promise(r => setTimeout(r, 100));
+    bot.setControlState('forward', false);
+    await new Promise(r => setTimeout(r, 50));
+    return true;
+  }
+
+  return false;
+}
+
+async function jumpOverSmallObstacleIfPossible(
+  bot: mineflayer.Bot,
+  currentPos: Vec3,
+  forwardVec: Vec3
+): Promise<boolean> {
+  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+
+  const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
+  const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+
+  // Check if we can jump over: feet blocked, head clear, room above
+  if (!feetClear && headClear) {
+    const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
+    const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
+
+    if (aboveHeadClear) {
+      bot.setControlState('jump', true);
+      bot.setControlState('forward', true);
+      await new Promise(r => setTimeout(r, 100));
+      bot.setControlState('jump', false);
+      bot.setControlState('forward', false);
+      await new Promise(r => setTimeout(r, 50));
+      return true;
+    }
+  }
+
+  return false;
+}
+
+async function mineForwardsIfPossible(
+  bot: mineflayer.Bot,
+  currentPos: Vec3,
+  forwardVec: Vec3,
+  selectMiningTool: (blockName: string) => any,
+  allowMiningOf: Record<string, string[]>,
+  DIG_TIMEOUT_SECONDS: number
+): Promise<{success: boolean, error?: string}> {
+  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+
+  const obstaclesAhead = [blockAheadFeet, blockAheadHead].filter(
+    block => block && block.name !== 'air' && block.name !== 'water' && block.name !== 'lava'
+  );
+
+  for (const obstacle of obstaclesAhead) {
+    if (!obstacle) continue;
+
+    const tool = selectMiningTool(obstacle.name);
+    if (tool) {
+      await bot.equip(tool, 'hand');
+      await bot.lookAt(obstacle.position.offset(0.5, 0.5, 0.5), true);
+
+      if (!bot.canDigBlock(obstacle)) {
+        continue;
+      }
+
+      try {
+        await digWithTimeout(bot, obstacle, DIG_TIMEOUT_SECONDS);
+        return {success: true};
+      } catch (digError) {
+        bot.stopDigging();
+        return {
+          success: false,
+          error: `Failed to mine ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}): ${formatError(digError)}`
+        };
+      }
+    } else if (Object.keys(allowMiningOf).length > 0) {
+      return {
+        success: false,
+        error: `Obstacle ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}) is blocking path but not in allowMiningOf. Add it to allowMiningOf or navigate around.`
+      };
+    }
+  }
+
+  return {success: false};
+}
+
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
   server.tool(
     "get-position",
@@ -919,94 +1020,34 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
           // ===== HORIZONTAL MOVEMENT: Look at target and move forward =====
           await bot.lookAt(target, false); // Yaw only (no pitch forcing)
 
-          // Check blocks directly in front at feet and head height
-          const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
-          const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
-
-          const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
-          const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
-
-          // 1. If path is completely clear, just walk (no jumping or mining)
-          if (feetClear && headClear) {
-            bot.setControlState('forward', true);
-            await new Promise(r => setTimeout(r, 100));
-            bot.setControlState('forward', false);
-            await new Promise(r => setTimeout(r, 50));
+          // Try movement strategies in order: walk, jump, mine
+          if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
             continue;
           }
 
-          // 2. Check if we can jump over the obstacle
-          if (!feetClear && headClear) {
-            // Obstacle at feet level but head is clear
-            // Check if we have room to jump: block above our head must be air
-            const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
-            const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
-
-            if (aboveHeadClear) {
-              // Can jump over
-              bot.setControlState('jump', true);
-              bot.setControlState('forward', true);
-              await new Promise(r => setTimeout(r, 100));
-              bot.setControlState('jump', false);
-              bot.setControlState('forward', false);
-              await new Promise(r => setTimeout(r, 50));
-              continue;
-            }
+          if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
+            continue;
           }
 
-          // 3. Try to mine obstacles (fallback when can't walk or jump)
-          const obstaclesAhead = [blockAheadFeet, blockAheadHead].filter(
-            block => block && block.name !== 'air' && block.name !== 'water' && block.name !== 'lava'
-          );
-
-          // Try to mine obstacles directly in front
-          for (const obstacle of obstaclesAhead) {
-            if (!obstacle) continue; // TypeScript null check
-            const tool = selectMiningTool(obstacle.name);
-            if (tool) {
-              // Mine this obstacle
-              await bot.equip(tool, 'hand');
-
-              // Look at the obstacle before mining
-              await bot.lookAt(obstacle.position.offset(0.5, 0.5, 0.5), true);
-
-              // Check if we can dig this block (handles both distance and reachability)
-              if (!bot.canDigBlock(obstacle)) {
-                // Can't dig - skip to next block
-                continue;
-              }
-
-              try {
-                await digWithTimeout(bot, obstacle, DIG_TIMEOUT_SECONDS);
-                // Successfully mined - count as progress
-                blocksMined++;
-                lastProgressTime = Date.now();
-                lastMinedBlock = null; // Reset mining tracker after successful mine
-                // Break out to move forward
-                break;
-              } catch (digError) {
-                bot.stopDigging();
-                return createResponse(
-                  `Failed to mine ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}): ` +
-                  `${formatError(digError)}`
-                );
-              }
-            } else if (Object.keys(allowMiningOf).length > 0) {
-              // allowMiningOf provided but block not in list
-              return createResponse(
-                `Obstacle ${obstacle.name} at (${obstacle.position.x}, ${obstacle.position.y}, ${obstacle.position.z}) ` +
-                `is blocking path but not in allowMiningOf. Add it to allowMiningOf or navigate around.`
-              );
-            }
-            // else: no mining configured, try to walk through/jump over
+          const mineResult = await mineForwardsIfPossible(bot, currentPos, forwardVec, selectMiningTool, allowMiningOf, DIG_TIMEOUT_SECONDS);
+          if (mineResult.error) {
+            return createResponse(mineResult.error);
           }
 
-          // Fallback: If we couldn't mine (no tools configured or other reason), just move forward
+          if (mineResult.success) {
+            blocksMined++;
+            lastProgressTime = Date.now();
+            lastMinedBlock = null;
+            // After mining, try to walk
+            await walkForwardsIfPossible(bot, currentPos, forwardVec);
+            continue;
+          }
+
+          // Fallback: If we couldn't mine (no tools configured), just try to move forward
           bot.setControlState('forward', true);
           await new Promise(r => setTimeout(r, 100));
           bot.setControlState('forward', false);
-
-          await new Promise(r => setTimeout(r, 50)); // Small pause between iterations
+          await new Promise(r => setTimeout(r, 50));
         }
 
         // Max iterations exceeded
