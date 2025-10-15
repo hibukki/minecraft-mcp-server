@@ -226,11 +226,29 @@ async function tryMiningOneBlock(
   bot: Bot,
   block: Block,
   allowedMiningToolsToMinedBlocks: Record<string, string[]>,
-  digTimeout: number = 3
+  digTimeout: number = 3,
+  allowMiningDiagonalBlocks: boolean = false
 ): Promise<{success: boolean, error?: string, blocksMined: number}> {
   const botPos = bot.entity.position;
   const blockPos = block.position;
   const distance = botPos.distanceTo(blockPos);
+
+  // Check if block is diagonal (unless explicitly allowed)
+  if (!allowMiningDiagonalBlocks) {
+    const dx = Math.abs(Math.floor(botPos.x) - Math.floor(blockPos.x));
+    const dy = Math.abs(Math.floor(botPos.y) - Math.floor(blockPos.y));
+    const dz = Math.abs(Math.floor(botPos.z) - Math.floor(blockPos.z));
+
+    // Block is diagonal if more than one axis differs
+    const axesDiffering = (dx > 0 ? 1 : 0) + (dy > 0 ? 1 : 0) + (dz > 0 ? 1 : 0);
+    if (axesDiffering > 1) {
+      return {
+        success: false,
+        blocksMined: 0,
+        error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is diagonal from bot at (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)}). Only mining adjacent blocks (not diagonal).`
+      };
+    }
+  }
 
   // Find the right tool for this block
   let tool = null;
