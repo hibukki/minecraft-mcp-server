@@ -704,6 +704,114 @@ async function mineForwardsIfPossible(
   return {success: true, blocksMined: totalBlocksMined};
 }
 
+function didArriveAtTarget(bot: mineflayer.Bot, target: Vec3): boolean {
+  const HORIZONTAL_THRESHOLD = 1.5;
+  const VERTICAL_THRESHOLD = 1.0;
+  const currentPos = bot.entity.position;
+  const horizontalDist = Math.sqrt(
+    Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
+  );
+  const verticalDist = Math.abs(currentPos.y - target.y);
+  return horizontalDist <= HORIZONTAL_THRESHOLD && verticalDist <= VERTICAL_THRESHOLD;
+}
+
+async function moveOneStep(
+  bot: mineflayer.Bot,
+  target: Vec3,
+  forwardVec: Vec3,
+  allowPillarUpWith: string[],
+  allowMiningOf: Record<string, string[]>,
+  digTimeout: number
+): Promise<{
+  blocksMined: number;
+  movedBlocksCloser: number;
+  pillaredUpBlocks: number;
+  error?: string;
+}> {
+  const currentPos = bot.entity.position;
+  const startDist = currentPos.distanceTo(target);
+
+  // Try walking forward
+  if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
+    const newPos = bot.entity.position;
+    const newDist = newPos.distanceTo(target);
+    const movedCloser = Math.max(0, startDist - newDist);
+    return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+  }
+
+  // Try jumping over obstacle
+  if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
+    const newPos = bot.entity.position;
+    const newDist = newPos.distanceTo(target);
+    const movedCloser = Math.max(0, startDist - newDist);
+    return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+  }
+
+  // Try mining forward
+  const mineResult = await mineForwardsIfPossible(
+    bot, currentPos, forwardVec, allowMiningOf, digTimeout
+  );
+
+  if (mineResult.error) {
+    return { blocksMined: mineResult.blocksMined, movedBlocksCloser: 0, pillaredUpBlocks: 0, error: mineResult.error };
+  }
+
+  if (mineResult.success && mineResult.blocksMined > 0) {
+    // Try walking after mining
+    const newCurrentPos = bot.entity.position;
+    await walkForwardsIfPossible(bot, newCurrentPos, forwardVec);
+    const newPos = bot.entity.position;
+    const newDist = newPos.distanceTo(target);
+    const movedCloser = Math.max(0, startDist - newDist);
+    return { blocksMined: mineResult.blocksMined, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+  }
+
+  // Try pillaring up if target is above
+  const VERTICAL_THRESHOLD = 1.0;
+  const verticalDist = Math.abs(currentPos.y - target.y);
+  if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
+    if (allowPillarUpWith.length === 0) {
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: 0,
+        pillaredUpBlocks: 0,
+        error: `Target is ${verticalDist.toFixed(1)} blocks above at (${Math.floor(target.x)}, ${Math.floor(target.y)}, ${Math.floor(target.z)}). ` +
+          `Current: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
+          `Need blocks for pillaring. Provide allowPillarUpWith parameter (e.g., ['cobblestone', 'dirt']).`
+      };
+    }
+
+    const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
+    if (!pillarBlock) {
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: 0,
+        pillaredUpBlocks: 0,
+        error: `Need blocks for pillaring: ${allowPillarUpWith.join(', ')}. None found in inventory.`
+      };
+    }
+
+    await bot.equip(pillarBlock, 'hand');
+    const pillared = await pillarUpOneBlock(bot);
+    const newPos = bot.entity.position;
+    const newDist = newPos.distanceTo(target);
+    const movedCloser = Math.max(0, startDist - newDist);
+    return {
+      blocksMined: 0,
+      movedBlocksCloser: movedCloser,
+      pillaredUpBlocks: pillared ? 1 : 0
+    };
+  }
+
+  // Nothing worked - stuck
+  return {
+    blocksMined: 0,
+    movedBlocksCloser: 0,
+    pillaredUpBlocks: 0,
+    error: "Stuck: Cannot walk, jump, mine, or pillar. Path may be blocked."
+  };
+}
+
 function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
   server.tool(
     "get-position",
@@ -921,153 +1029,74 @@ function registerPositionTools(server: McpServer, bot: mineflayer.Bot) {
       allowPillarUpWith: z
         .array(z.string())
         .optional()
-        .describe("Blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
+        .describe("Allow using these blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
       allowMiningOf: z
         .record(z.string(), z.array(z.string()))
         .optional()
         .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+      maxIterations: z
+        .number()
+        .optional()
+        .default(10)
+        .describe("Maximum number of movement iterations"),
     },
-    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {} }): Promise<McpResponse> => {
+    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, maxIterations = 10 }): Promise<McpResponse> => {
       const startPos = bot.entity.position.clone();
       const startTime = Date.now();
       const target = new Vec3(x, y, z);
       const DIG_TIMEOUT_SECONDS = 3;
 
       try {
-        // ===== MAIN MOVEMENT LOOP =====
-        let lastProgressPos = startPos.clone();
-        let lastProgressTime = startTime;
-        let blocksMined = 0;
-        let lastBlocksMined = 0;
-        let iterationCount = 0;
-        const MAX_ITERATIONS = 1000; // Safety limit
-        const HORIZONTAL_THRESHOLD = 1.5;
-        const VERTICAL_THRESHOLD = 1.0;
-        const PROGRESS_TIMEOUT_MS = 1000;
-        const TOTAL_TIMEOUT_MS = 10000;
+        let totalBlocksMined = 0;
+        let totalPillaredBlocks = 0;
 
-        while (iterationCount < MAX_ITERATIONS) {
-          iterationCount++;
-          const currentPos = bot.entity.position;
-          const now = Date.now();
+        for (let iteration = 0; iteration < maxIterations; iteration++) {
+          // Check if we've reached the target
+          if (didArriveAtTarget(bot, target)) {
+            const totalDist = startPos.distanceTo(bot.entity.position);
+            const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+            return createResponse(
+              `Reached target (${x}, ${y}, ${z}) from (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}). ` +
+              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.`
+            );
+          }
 
-          // Calculate yaw and forward vector once per iteration
+          // Look at target (so bot will look realistic)
+          await bot.lookAt(target, false);
+
+          // TODO: Remove this. moveOneStep already gets `target` so it can calculate the `forwardVec` if it needs to.
+          // Calculate forward vector
           const yaw = bot.entity.yaw;
           const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
 
-          // Check if we've reached the target
-          const horizontalDist = Math.sqrt(
-            Math.pow(currentPos.x - x, 2) + Math.pow(currentPos.z - z, 2)
-          );
-          const verticalDist = Math.abs(currentPos.y - y);
-
-          if (horizontalDist <= HORIZONTAL_THRESHOLD && verticalDist <= VERTICAL_THRESHOLD) {
-            const totalDist = startPos.distanceTo(currentPos);
-            const timeElapsed = ((now - startTime) / 1000).toFixed(1);
-            return createResponse(
-              `Reached target (${x}, ${y}, ${z}) from (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}). ` +
-              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${blocksMined} blocks.`
-            );
-          }
-
-          // Check total timeout (not an error - just opportunity to replan)
-          if (now - startTime > TOTAL_TIMEOUT_MS) {
-            const distRemaining = currentPos.distanceTo(target);
-            const distTraveled = startPos.distanceTo(currentPos);
-            return createResponse(
-              `Timeout after ${(TOTAL_TIMEOUT_MS / 1000).toFixed(0)}s. Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
-              `mined ${blocksMined} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
-              `Call move-to again to continue (not stuck, just giving you a chance to change plan).`
-            );
-          }
-
-          // Check progress toward target (either moved closer OR mined more blocks)
-          const distToTarget = currentPos.distanceTo(target);
-          const lastDistToTarget = lastProgressPos.distanceTo(target);
-          const movedCloser = distToTarget < lastDistToTarget - 0.3;
-          const minedMoreBlocks = blocksMined > lastBlocksMined;
-
-          if (movedCloser || minedMoreBlocks) {
-            lastProgressPos = currentPos.clone();
-            lastProgressTime = now;
-            lastBlocksMined = blocksMined;
-          } else if (now - lastProgressTime > PROGRESS_TIMEOUT_MS) {
-            // No progress for 1 second - stuck
-            const distTraveled = startPos.distanceTo(currentPos);
-
-            // Check what's blocking us
-            const checkPosLow = currentPos.offset(forwardVec.x, 0, forwardVec.z).floor();
-            const checkPosHigh = currentPos.offset(forwardVec.x, 1, forwardVec.z).floor();
-            const blockBottom = bot.blockAt(checkPosLow);
-            const blockTop = bot.blockAt(checkPosHigh);
-
-            const blocksDesc = [
-              blockBottom && blockBottom.name !== 'air' ? `bottom: ${blockBottom.name}` : null,
-              blockTop && blockTop.name !== 'air' ? `top: ${blockTop.name}` : null
-            ].filter(Boolean).join(', ');
-
-            return createResponse(
-              `Stuck walking forward: No progress for ${PROGRESS_TIMEOUT_MS}ms. ` +
-              `Position: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}), ` +
-              `Target: (${x}, ${y}, ${z}), Distance remaining: ${distToTarget.toFixed(1)} blocks. ` +
-              `Distance traveled: ${distTraveled.toFixed(1)} blocks. Mined ${blocksMined} blocks. ` +
-              (blocksDesc ? `Blocks in front: ${blocksDesc}. ` : '') +
-              `Suggestion: Add these blocks to allowMiningOf or navigate around.`
-            );
-          }
-
-          await bot.lookAt(target, false);
-
-          if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
-            continue;
-          }
-
-          if (await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec)) {
-            continue;
-          }
-
-          const mineResult = await mineForwardsIfPossible(
-            bot, currentPos, forwardVec, allowMiningOf, DIG_TIMEOUT_SECONDS
+          const stepResult = await moveOneStep(
+            bot, target, forwardVec,
+            allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS
           );
 
-          if (mineResult.error) {
-            return createResponse(mineResult.error);
-          }
+          totalBlocksMined += stepResult.blocksMined;
+          totalPillaredBlocks += stepResult.pillaredUpBlocks;
 
-          if (mineResult.success) {
-            blocksMined += mineResult.blocksMined;
-            await walkForwardsIfPossible(bot, currentPos, forwardVec);
-            continue;
-          }
+          // Check if we made progress this iteration
+          const madeProgress = stepResult.blocksMined > 0 ||
+                              stepResult.movedBlocksCloser >= 0.3 ||
+                              stepResult.pillaredUpBlocks > 0;
 
-          // Pillar up as last resort if target is above and we're stuck
-          if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
-            if (allowPillarUpWith.length === 0) {
-              return createResponse(
-                `Target is ${verticalDist.toFixed(1)} blocks above at (${x}, ${y}, ${z}). ` +
-                `Current: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
-                `Need blocks for pillaring. Provide allowPillarUpWith parameter (e.g., ['cobblestone', 'dirt']).`
-              );
-            }
-
-            const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
-            if (!pillarBlock) {
-              return createResponse(
-                `Need blocks for pillaring: ${allowPillarUpWith.join(', ')}. None found in inventory.`
-              );
-            }
-
-            await bot.equip(pillarBlock, 'hand');
-            await pillarUpOneBlock(bot);
-            continue;
+          if (!madeProgress) {
+            // TODO: When move-to exists, also return how many iterations were run, what total progress was made so far (blocksMined, movedBlocksCloser, ..).
+            // No progress - return error from step
+            return createResponse(stepResult.error || "Stuck at this iteration with no info from moveOneStep");
           }
         }
 
-        // Max iterations exceeded
+        // Max iterations reached
+        // TODO: Only calculate these things once, and reuse them for the other errors, like in !madeProgress
+        const distRemaining = bot.entity.position.distanceTo(target);
+        const distTraveled = startPos.distanceTo(bot.entity.position);
         return createResponse(
-          `Failed to reach target after ${MAX_ITERATIONS} iterations. ` +
-          `Current: (${Math.floor(bot.entity.position.x)}, ${Math.floor(bot.entity.position.y)}, ${Math.floor(bot.entity.position.z)}), ` +
-          `Target: (${x}, ${y}, ${z}). May be stuck in complex terrain.`
+          `Reached iteration limit (${maxIterations} iterations). Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
+          `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
+          `Call move-to again to continue.`
         );
 
       } catch (error) {
