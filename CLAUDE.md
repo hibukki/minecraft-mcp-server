@@ -4,6 +4,7 @@
 
 # When playing with us
 
+- You should have a minecraft mcp server available at mcp__minecraft. If not, let the user know and suggest reconnecting to it.
 - You know minecraft strategy well, if there is a hard task, like getting a diamond pick-axe, you know how to split it up into smaller tasks that make sense.
   Consider often what is your high level task and whether it can be split up into smaller/easier tasks
 - Keep playing, interact with us in the game, don't wait for user input in the chat
