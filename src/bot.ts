@@ -233,19 +233,18 @@ async function tryMiningOneBlock(
   const blockPos = block.position;
   const distance = botPos.distanceTo(blockPos);
 
-  // Check if block is diagonal (unless explicitly allowed)
+  // Check if block is diagonal in XZ plane (unless explicitly allowed)
+  // Diagonal in Y (up/down) is OK, but diagonal in XZ (horizontal) is NOT OK
   if (!allowMiningDiagonalBlocks) {
     const dx = Math.abs(Math.floor(botPos.x) - Math.floor(blockPos.x));
-    const dy = Math.abs(Math.floor(botPos.y) - Math.floor(blockPos.y));
     const dz = Math.abs(Math.floor(botPos.z) - Math.floor(blockPos.z));
 
-    // Block is diagonal if more than one axis differs
-    const axesDiffering = (dx > 0 ? 1 : 0) + (dy > 0 ? 1 : 0) + (dz > 0 ? 1 : 0);
-    if (axesDiffering > 1) {
+    // Block is diagonal in XZ plane if both X and Z differ
+    if (dx > 0 && dz > 0) {
       return {
         success: false,
         blocksMined: 0,
-        error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is diagonal from bot at (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)}). Only mining adjacent blocks (not diagonal).`
+        error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is diagonal in XZ plane from bot at (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)}). Only mining blocks that are axis-aligned in XZ (forward/back/left/right, up/down is OK).`
       };
     }
   }
@@ -877,9 +876,24 @@ async function moveOneStep(
   const currentPos = bot.entity.position;
   const startDist = currentPos.distanceTo(target);
 
-  // Calculate forward vector from bot's yaw (already looking at target)
-  const yaw = bot.entity.yaw;
-  const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  // Choose axis-aligned direction toward target (not diagonal)
+  // Calculate deltas for each axis
+  const dx = target.x - currentPos.x;
+  const dz = target.z - currentPos.z;
+
+  // Choose the axis with larger absolute difference
+  let forwardVec: Vec3;
+  if (Math.abs(dx) > Math.abs(dz)) {
+    // Move along X axis
+    forwardVec = new Vec3(dx > 0 ? 1 : -1, 0, 0);
+  } else {
+    // Move along Z axis
+    forwardVec = new Vec3(0, 0, dz > 0 ? 1 : -1);
+  }
+
+  // Look in the direction we're moving (axis-aligned)
+  const lookTarget = currentPos.offset(forwardVec.x * 5, 0, forwardVec.z * 5);
+  await bot.lookAt(lookTarget, false);
 
   // Collect error messages from each failed step
   const errorsFromPreviousSteps: string[] = [];
@@ -1203,9 +1217,6 @@ function registerPositionTools(server: McpServer, bot: Bot) {
               `Final distance to target: ${arrivalCheck.distance.toFixed(2)} blocks.`
             );
           }
-
-          // Look at target (so bot will look realistic and set yaw)
-          await bot.lookAt(target, false);
 
           const stepResult = await moveOneStep(
             bot, target,
