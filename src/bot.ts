@@ -50,6 +50,25 @@ interface StoredMessage {
   content: string;
 }
 
+// ========== Movement Result Types (Type-Safe) ==========
+
+/** Result type that requires error message when success is false */
+type MiningResult =
+  | { success: true; blocksMined: number }
+  | { success: false; blocksMined: number; error: string };
+
+type JumpResult =
+  | { success: true }
+  | { success: false; error: string };
+
+type PillarResult =
+  | { success: true; pillaredUpBlocks: number; movedBlocksCloser: number }
+  | { success: false; pillaredUpBlocks: number; movedBlocksCloser: number; error: string };
+
+type MineForwardResult =
+  | { success: true; blocksMined: number }
+  | { success: false; blocksMined: number; error: string };
+
 // ========== Command Line Argument Parsing ==========
 
 function parseCommandLineArgs() {
@@ -228,7 +247,7 @@ async function tryMiningOneBlock(
   allowedMiningToolsToMinedBlocks: Record<string, string[]>,
   digTimeout: number = 3,
   allowMiningDiagonalBlocks: boolean = false
-): Promise<{success: boolean, error?: string, blocksMined: number}> {
+): Promise<MiningResult> {
   const botPos = bot.entity.position;
   const blockPos = block.position;
   const distance = botPos.distanceTo(blockPos);
@@ -653,7 +672,7 @@ async function tryPillaringUp(
   bot: Bot,
   target: Vec3,
   allowPillarUpWith: string[]
-): Promise<{success: boolean, error?: string, pillaredUpBlocks: number, movedBlocksCloser: number}> {
+): Promise<PillarResult> {
   const currentPos = bot.entity.position;
   const startDist = currentPos.distanceTo(target);
   const verticalDist = Math.abs(currentPos.y - target.y);
@@ -742,7 +761,7 @@ async function jumpOverSmallObstacleIfPossible(
   currentPos: Vec3,
   forwardVec: Vec3,
   target: Vec3
-): Promise<{success: boolean, error?: string}> {
+): Promise<JumpResult> {
   // Check all relevant blocks
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
@@ -825,7 +844,7 @@ async function mineForwardsIfPossible(
   forwardVec: Vec3,
   allowMiningOf: Record<string, string[]>,
   DIG_TIMEOUT_SECONDS: number
-): Promise<{success: boolean, error?: string, blocksMined: number}> {
+): Promise<MineForwardResult> {
   const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
   const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
   let totalBlocksMined = 0;
@@ -914,7 +933,7 @@ async function moveOneStep(
     const newDist = newPos.distanceTo(target);
     const movedCloser = Math.max(0, startDist - newDist);
     return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
-  } else if (jumpResult.error) {
+  } else {
     errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
   }
 
@@ -923,9 +942,9 @@ async function moveOneStep(
     bot, currentPos, forwardVec, allowMiningOf, digTimeout
   );
 
-  if (mineResult.error) {
+  if (!mineResult.success) {
     errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
-  } else if (mineResult.success && mineResult.blocksMined === 0) {
+  } else if (mineResult.blocksMined === 0) {
     errorsFromPreviousSteps.push("Mine: no blocks ahead to mine");
   }
 
@@ -942,7 +961,7 @@ async function moveOneStep(
   // Try pillaring up if target is above
   const pillarResult = await tryPillaringUp(bot, target, allowPillarUpWith);
 
-  if (pillarResult.error) {
+  if (!pillarResult.success) {
     errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
   }
 
