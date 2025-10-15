@@ -911,6 +911,8 @@ async function moveOneStep(
 
   if (mineResult.error) {
     errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
+  } else if (mineResult.success && mineResult.blocksMined === 0) {
+    errorsFromPreviousSteps.push("Mine: no blocks ahead to mine");
   }
 
   if (mineResult.success && mineResult.blocksMined > 0) {
