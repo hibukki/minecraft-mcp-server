@@ -791,9 +791,8 @@ async function moveOneStep(
   const yaw = bot.entity.yaw;
   const forwardVec = new Vec3(-Math.sin(yaw), 0, -Math.cos(yaw));
 
-  // Collect error messages to provide detailed feedback
-  let jumpError: string | undefined;
-  let mineError: string | undefined;
+  // Collect error messages from each failed step
+  const errorsFromPreviousSteps: string[] = [];
 
   // Try walking forward
   if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
@@ -802,6 +801,7 @@ async function moveOneStep(
     const movedCloser = Math.max(0, startDist - newDist);
     return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
   }
+  errorsFromPreviousSteps.push("Walk: path ahead blocked");
 
   // Try jumping over obstacle
   const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec, target);
@@ -810,8 +810,8 @@ async function moveOneStep(
     const newDist = newPos.distanceTo(target);
     const movedCloser = Math.max(0, startDist - newDist);
     return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
-  } else {
-    jumpError = jumpResult.error;
+  } else if (jumpResult.error) {
+    errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
   }
 
   // Try mining forward
@@ -820,7 +820,7 @@ async function moveOneStep(
   );
 
   if (mineResult.error) {
-    mineError = mineResult.error;
+    errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
   }
 
   if (mineResult.success && mineResult.blocksMined > 0) {
@@ -838,23 +838,27 @@ async function moveOneStep(
   const verticalDist = Math.abs(currentPos.y - target.y);
   if (target.y > currentPos.y + 1 && verticalDist > VERTICAL_THRESHOLD) {
     if (allowPillarUpWith.length === 0) {
+      errorsFromPreviousSteps.push(
+        `Pillar: Target is ${verticalDist.toFixed(1)} blocks above but no allowPillarUpWith blocks provided`
+      );
       return {
         blocksMined: 0,
         movedBlocksCloser: 0,
         pillaredUpBlocks: 0,
-        error: `Target is ${verticalDist.toFixed(1)} blocks above at (${Math.floor(target.x)}, ${Math.floor(target.y)}, ${Math.floor(target.z)}). ` +
-          `Current: (${Math.floor(currentPos.x)}, ${Math.floor(currentPos.y)}, ${Math.floor(currentPos.z)}). ` +
-          `Need blocks for pillaring. Provide allowPillarUpWith parameter (e.g., ['cobblestone', 'dirt']).`
+        error: errorsFromPreviousSteps.join("; ")
       };
     }
 
     const pillarBlock = bot.inventory.items().find(item => allowPillarUpWith.includes(item.name));
     if (!pillarBlock) {
+      errorsFromPreviousSteps.push(
+        `Pillar: Need blocks ${allowPillarUpWith.join(', ')} but none found in inventory`
+      );
       return {
         blocksMined: 0,
         movedBlocksCloser: 0,
         pillaredUpBlocks: 0,
-        error: `Need blocks for pillaring: ${allowPillarUpWith.join(', ')}. None found in inventory.`
+        error: errorsFromPreviousSteps.join("; ")
       };
     }
 
@@ -863,23 +867,34 @@ async function moveOneStep(
     const newPos = bot.entity.position;
     const newDist = newPos.distanceTo(target);
     const movedCloser = Math.max(0, startDist - newDist);
-    return {
-      blocksMined: 0,
-      movedBlocksCloser: movedCloser,
-      pillaredUpBlocks: pillared ? 1 : 0
-    };
+
+    if (pillared) {
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: movedCloser,
+        pillaredUpBlocks: 1
+      };
+    } else {
+      errorsFromPreviousSteps.push(
+        `Pillar: Failed to pillar up (target ${verticalDist.toFixed(1)} blocks above)`
+      );
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: 0,
+        pillaredUpBlocks: 0,
+        error: errorsFromPreviousSteps.join("; ")
+      };
+    }
   }
 
   // Nothing worked - stuck
-  let stuckMessage = "Stuck: Cannot walk, jump, mine, or pillar.";
-  if (jumpError) stuckMessage += ` Jump: ${jumpError}`;
-  if (mineError) stuckMessage += ` Mine: ${mineError}`;
-
   return {
     blocksMined: 0,
     movedBlocksCloser: 0,
     pillaredUpBlocks: 0,
-    error: stuckMessage
+    error: errorsFromPreviousSteps.length > 0
+      ? errorsFromPreviousSteps.join("; ")
+      : "Stuck: No progress made (unknown reason)"
   };
 }
 
@@ -1153,8 +1168,24 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const distRemaining = bot.entity.position.distanceTo(target);
             const distTraveled = startPos.distanceTo(bot.entity.position);
 
+            // If we're close to target, consider it "close enough" rather than "stuck"
+            const currentPos = bot.entity.position;
+            const horizontalDist = Math.sqrt(
+              Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
+            );
+            const verticalDist = Math.abs(currentPos.y - target.y);
+
+            if (horizontalDist <= 2.0 && verticalDist <= 1.5) {
+              return createResponse(
+                `Close enough to target (within ${distRemaining.toFixed(1)} blocks). ` +
+                `Horizontal: ${horizontalDist.toFixed(1)} blocks, Vertical: ${verticalDist.toFixed(1)} blocks. ` +
+                `Cannot get closer: ${stepResult.error || "unknown reason"}. ` +
+                `Progress: traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks.`
+              );
+            }
+
             return createResponse(
-              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep"}. ` +
+              `${stepResult.error || "Stuck with no progress (unknown reason)"}. ` +
               `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
               `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
               `${distRemaining.toFixed(1)} blocks remaining to target.`
