@@ -1,3 +1,7 @@
+# Thinking about where the bot is
+
+- Don't think "the bot is at x,y,z" but rather "the bottom half of the bot is at x,y,z" (since the bot is 2 blocks)
+
 # When playing with us
 
 - You know minecraft strategy well, if there is a hard task, like getting a diamond pick-axe, you know how to split it up into smaller tasks that make sense.
