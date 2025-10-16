@@ -2504,14 +2504,15 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           const currentPos = bot.entity.position;
           const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
           if (visitedPositions.has(posKey)) {
-            // const distRemaining = currentPos.distanceTo(target);
-            // const distTraveled = startPos.distanceTo(currentPos);
-            // return createResponse(
-            //   `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-            //   `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-            //   `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-            //   `Steps: ${stepLog.join('; ')}`
-            // );
+            const distRemaining = currentPos.distanceTo(target);
+            const distTraveled = startPos.distanceTo(currentPos);
+            return createResponse(
+              `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
+              `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+              `Steps: ${stepLog.join('; ')}\n` +
+              `Perhaps the pathfinder isn't working well for this situation (is it a reproducible bug?) and you should try a lower level tool.`
+            );
           }
           visitedPositions.add(posKey);
 
