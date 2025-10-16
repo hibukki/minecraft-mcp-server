@@ -2277,7 +2277,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const distTraveled = startPos.distanceTo(currentPos);
             return createResponse(
               `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-              `Might be going in a circle. Traveled ${distTraveled.toFixed(1)} blocks, ` +
+              `Might be going in a circle or stuck. Traveled ${distTraveled.toFixed(1)} blocks, ` +
               `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
               `${distRemaining.toFixed(1)} blocks remaining to target.`
             );
