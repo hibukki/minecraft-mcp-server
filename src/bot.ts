@@ -1811,8 +1811,12 @@ function registerPositionTools(server: McpServer, bot: Bot) {
     "Build a pillar by jumping and placing blocks below",
     {
       height: z.number().describe("Number of blocks to pillar up"),
+      allowMiningOf: z
+        .record(z.array(z.string()))
+        .optional()
+        .describe("Optional tool-to-blocks mapping for auto-mining blocks above: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
     },
-    async ({ height }): Promise<McpResponse> => {
+    async ({ height, allowMiningOf = {} }): Promise<McpResponse> => {
       try {
         // Check if bot has a placeable block equipped
         const heldItem = bot.heldItem;
@@ -1833,39 +1837,38 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           );
         }
 
-        // Check and clear blocks above if they exist (player is 2 blocks tall, check Y+2 through Y+height+1)
         const buildingBlockName = heldItem.name;
-        const currentPos = bot.entity.position;
-        let blocksDug = 0;
-        for (let yOffset = 2; yOffset <= height + 1; yOffset++) {
-          const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
-          if (blockAbove && blockAbove.name !== 'air') {
-            // Need to dig this block - temporarily equip a tool
-            const pickaxe = bot.inventory.items().find(item =>
-              item.name.includes('pickaxe') || item.name.includes('shovel') || item.name.includes('axe')
-            );
-            if (pickaxe) {
-              await bot.equip(pickaxe, 'hand');
-              await bot.dig(blockAbove);
-              blocksDug++;
-              // Re-equip the building block by name
-              const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
-              if (buildingBlock) {
-                await bot.equip(buildingBlock, 'hand');
-              }
-            } else {
-              // No tool, try to dig anyway
-              await bot.dig(blockAbove);
-              blocksDug++;
-            }
-          }
-        }
-
         const startY = bot.entity.position.y.toFixed(1);
         let blocksPlaced = 0;
-        const digMessage = blocksDug > 0 ? ` (cleared ${blocksDug} blocks above first)` : '';
+        let totalBlocksCleared = 0;
 
         for (let i = 0; i < height; i++) {
+          // Before each pillar iteration, clear blocks within reachable range (Y+2, Y+3, Y+4)
+          const currentPos = bot.entity.position;
+          const blocksToCheck = [2, 3, 4]; // Y+2, Y+3, Y+4 (bot can reach ~3 blocks above head)
+
+          for (const yOffset of blocksToCheck) {
+            const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
+            if (blockAbove && blockAbove.name !== 'air') {
+              // Try to mine this block using tryMiningOneBlock
+              const mineResult = await tryMiningOneBlock(bot, blockAbove, allowMiningOf, 3);
+              if (!mineResult.success) {
+                return createResponse(
+                  `Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. ${mineResult.error}`
+                );
+              }
+              totalBlocksCleared++;
+            }
+          }
+
+          // Re-equip the building block (in case we switched to a tool for mining)
+          const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
+          if (!buildingBlock) {
+            return createResponse(
+              `Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed`
+            );
+          }
+          await bot.equip(buildingBlock, 'hand');
           const beforeY = bot.entity.position.y.toFixed(1);
 
           // Use the pillarUpOneBlock helper
@@ -1907,8 +1910,9 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         }
 
         const finalY = bot.entity.position.y.toFixed(1);
+        const clearMessage = totalBlocksCleared > 0 ? ` (cleared ${totalBlocksCleared} blocks above)` : '';
         return createResponse(
-          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${digMessage}`
+          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${clearMessage}`
         );
       } catch (error) {
         bot.setControlState("jump", false);
