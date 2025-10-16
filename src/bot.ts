@@ -1919,11 +1919,14 @@ function registerPositionTools(server: McpServer, bot: Bot) {
     }): Promise<McpResponse> => {
       return new Promise((resolve) => {
         try {
+          const startPos = bot.entity.position.clone();
           bot.setControlState(direction, true);
 
           setTimeout(() => {
             bot.setControlState(direction, false);
-            resolve(createResponse(`Moved ${direction} for ${duration}ms. If stuck, consider show-adjacent-blocks`));
+            const endPos = bot.entity.position.clone();
+            const distance = startPos.distanceTo(endPos);
+            resolve(createResponse(`Moved ${direction} for ${duration}ms. Distance: ${distance.toFixed(2)} blocks. If stuck, consider show-adjacent-blocks`));
           }, duration);
         } catch (error) {
           bot.setControlState(direction, false);
