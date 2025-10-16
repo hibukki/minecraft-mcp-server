@@ -1523,6 +1523,33 @@ async function strafeToMiddleBothXZ(bot: Bot): Promise<void> {
 }
 
 /**
+ * Get the bot's position information
+ */
+function getBotPosition(bot: Bot): {
+  botFeetPosition: { x: string; y: string; z: string };
+  botHeadPosition: { x: string; y: string; z: string };
+  blockUnderBotFeet: Block | null;
+} {
+  const position = bot.entity.position;
+
+  const botFeetPosition = {
+    x: position.x.toFixed(1),
+    y: position.y.toFixed(1),
+    z: position.z.toFixed(1),
+  };
+
+  const botHeadPosition = {
+    x: position.x.toFixed(1),
+    y: (position.y + 1).toFixed(1),
+    z: position.z.toFixed(1),
+  };
+
+  const blockUnderBotFeet = bot.blockAt(position.offset(0, -1, 0).floor());
+
+  return { botFeetPosition, botHeadPosition, blockUnderBotFeet };
+}
+
+/**
  * Get the blocks ahead of the bot's head and feet
  */
 function getBlocksAhead(
@@ -1823,15 +1850,12 @@ function registerPositionTools(server: McpServer, bot: Bot) {
     {},
     async (): Promise<McpResponse> => {
       try {
-        const position = bot.entity.position;
-        const pos = {
-          x: position.x.toFixed(1),
-          y: position.y.toFixed(1),
-          z: position.z.toFixed(1),
-        };
+        const { botFeetPosition, botHeadPosition, blockUnderBotFeet } = getBotPosition(bot);
 
         return createResponse(
-          `Current position: (${pos.x}, ${pos.y}, ${pos.z})`
+          `Bot feet position: (${botFeetPosition.x}, ${botFeetPosition.y}, ${botFeetPosition.z})\n` +
+          `Bot head position: (${botHeadPosition.x}, ${botHeadPosition.y}, ${botHeadPosition.z})\n` +
+          `Block under bot feet: ${blockUnderBotFeet?.name || 'null'}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -2044,8 +2068,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "align-xz-and-strafe-to-center",
-    "Debug tool: Check if bot needs strafing to center and optionally execute the strafe movement",
+    "center-bot-in-current-block",
+    "If the bot is stuck even though it is trying to move in a direction that should be available: the bot might be at the edge of its block, and so centering might help",
     {
       executeStrafe: z
         .boolean()
@@ -2155,7 +2179,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "look-ahead-not-diagonally",
-    "Get blocks ahead of the bot's head and feet in the direction toward target",
+    "Debug tool",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
       targetY: z.number().describe("Target Y coordinate to determine direction"),
@@ -2188,7 +2212,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "mine-forwards",
-    "Mine blocks ahead of the bot in the direction toward target",
+    "Mines the block ahead of the bot's head and ahead of the bot's feet, used to make progress underground",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
       targetY: z.number().describe("Target Y coordinate to determine direction"),
@@ -2334,8 +2358,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "move-to",
-    "Move to a target position using yaw-based movement with auto-mining and optional pillar-up",
+    "pathfind-and-move-to",
+    "Move to a target position with auto-mining and optional pillar-up",
     {
       x: z.number().describe("Target X coordinate"),
       y: z.number().describe("Target Y coordinate"),
@@ -2652,7 +2676,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "dig-block",
-    "Dig a block at the specified position",
+    "Dig one block",
     {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
@@ -2764,7 +2788,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "find-block",
+    "find-block-by-type",
     "Find the nearest block of a specific type",
     {
       blockType: z.string().describe("Type of block to find"),
@@ -3110,89 +3134,6 @@ function registerChatTools(server: McpServer, bot: Bot) {
       }
     }
   );
-}
-
-// ========== Flight Tools ==========
-
-function registerFlightTools(server: McpServer, bot: Bot) {
-  server.tool(
-    "fly-to",
-    "Make the bot fly to a specific position",
-    {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
-    },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      if (!bot.creative) {
-        return createResponse("Creative mode is not available. Cannot fly.");
-      }
-
-      const controller = new AbortController();
-      const FLIGHT_TIMEOUT_MS = 20000;
-
-      const timeoutId = setTimeout(() => {
-        if (!controller.signal.aborted) {
-          controller.abort();
-        }
-      }, FLIGHT_TIMEOUT_MS);
-
-      try {
-        const destination = new Vec3(x, y, z);
-
-        await createCancellableFlightOperation(bot, destination, controller);
-
-        return createResponse(
-          `Successfully flew to position (${x}, ${y}, ${z}).`
-        );
-      } catch (error) {
-        if (controller.signal.aborted) {
-          const currentPosAfterTimeout = bot.entity.position;
-          return createErrorResponse(
-            `Flight timed out after ${
-              FLIGHT_TIMEOUT_MS / 1000
-            } seconds. The destination may be unreachable. ` +
-              `Current position: ${formatBotPosition(currentPosAfterTimeout)}`
-          );
-        }
-
-        log("error", `Flight error: ${formatError(error)}`);
-        return createErrorResponse(error as Error);
-      } finally {
-        clearTimeout(timeoutId);
-        bot.creative.stopFlying();
-      }
-    }
-  );
-}
-
-function createCancellableFlightOperation(
-  bot: Bot,
-  destination: Vec3,
-  controller: AbortController
-): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    let aborted = false;
-
-    controller.signal.addEventListener("abort", () => {
-      aborted = true;
-      bot.creative.stopFlying();
-      reject(new Error("Flight operation cancelled"));
-    });
-
-    bot.creative
-      .flyTo(destination)
-      .then(() => {
-        if (!aborted) {
-          resolve(true);
-        }
-      })
-      .catch((err: any) => {
-        if (!aborted) {
-          reject(err);
-        }
-      });
-  });
 }
 
 // ========== Game State Tools ============
