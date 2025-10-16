@@ -1,7 +1,10 @@
 {
     "editor.formatOnSave": false,
     "cSpell.words": [
-        "mineflayer",
-        "cooldown"
+        "cooldown",
+        "craftable",
+        "prismarine",
+        "Unequip",
+        "mineflayer"
     ],
 }
