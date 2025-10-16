@@ -2667,8 +2667,8 @@ function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "get-nearby-blocks",
-    "Get all unique blocks and entities in the nearby area, sorted by distance",
+    "get-nearby-block-types",
+    "Get all unique block types and entity types in the nearby area with counts and closest distance",
     {
       maxDistanceSideways: z
         .number()
@@ -2784,8 +2784,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
         limitedItems.forEach((item, index) => {
           const pos = item.position;
           const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
-          const countStr = item.count > 1 ? ` (x${item.count})` : '';
-          output += `${index + 1}. ${marker} ${item.type}${countStr} - ${item.distance.toFixed(1)} blocks away at ${formatBlockPosition(pos)}\n`;
+          output += `${index + 1}. ${marker} ${item.type} | count=${item.count} | closest_distance=${item.distance.toFixed(1)} | closest_xyz=${formatBlockPosition(pos)}\n`;
         });
 
         return createResponse(output.trim());
