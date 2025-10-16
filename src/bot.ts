@@ -2025,6 +2025,25 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
+    "center-in-block",
+    "Center the bot in both X and Z axes within the current block",
+    {},
+    async (): Promise<McpResponse> => {
+      try {
+        const posBefore = bot.entity.position.clone();
+        await strafeToMiddleBothXZ(bot);
+        const posAfter = bot.entity.position.clone();
+
+        return createResponse(
+          `Centered bot: (${posBefore.x.toFixed(2)}, ${posBefore.z.toFixed(2)}) → (${posAfter.x.toFixed(2)}, ${posAfter.z.toFixed(2)})`
+        );
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
     "align-xz-and-strafe-to-center",
     "Debug tool: Check if bot needs strafing to center and optionally execute the strafe movement",
     {
