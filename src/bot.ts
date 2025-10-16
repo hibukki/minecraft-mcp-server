@@ -1200,9 +1200,12 @@ async function mineUpOneStep(
   // Look at the target stair block
   await bot.lookAt(blockAheadOfFeet.position.offset(0.5, 0.5, 0.5), false);
 
-  // Jump and move forward
-  bot.setControlState('jump', true);
+  // Walk forward first to position properly at the edge of current stair
   bot.setControlState('forward', true);
+  await new Promise(r => setTimeout(r, 200));
+
+  // Now jump while continuing to move forward
+  bot.setControlState('jump', true);
   await new Promise(r => setTimeout(r, 500));
   bot.setControlState('jump', false);
   // Keep moving forward for a bit after jump ends
