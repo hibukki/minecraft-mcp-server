@@ -1948,7 +1948,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "move-in-direction",
-    "Move the bot in a specific direction for a duration. This is a low level command that doesn't try to deal with obstacles",
+    "Move the bot in a specific direction for a duration. Good to move in flat ground with no obstacles",
     {
       direction: z
         .enum(["forward", "back", "left", "right"])
@@ -1986,7 +1986,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "pillar-up",
-    "Build a pillar by jumping and placing blocks below",
+    "Build a pillar by jumping and placing blocks below. Good for trying to go way up.",
     {
       height: z.number().describe("Number of blocks to pillar up"),
       allowMiningOf: z
@@ -2432,8 +2432,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "pathfind-and-move-or-dig-to",
-    "Move to a target position with auto-mining and optional pillar-up",
+    "deprecated-pathfind-and-move-or-dig-to",
+    "Move to a target position with auto-mining and optional pillar-up.",
     {
       x: z.number().describe("Target X coordinate"),
       y: z.number().describe("Target Y coordinate"),
@@ -2788,7 +2788,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           return createResponse(result.error || "Failed to mine block");
         }
 
-        let response = `Dug ${block.name} at (${x}, ${y}, ${z})`;
+        let response = `Dug ${block.name} at (${x}, ${y}, ${z}). To pick up block, you might have to walk to it`;
         // Add light level warning if it's dark
         if (lightLevel !== undefined && lightLevel < 8) {
           response += ` (fyi: block lighting was ${lightLevel}/15)`;
@@ -2802,7 +2802,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "dig-directly-down",
-    "Dig straight down by mining blocks directly below the bot. Automatically centers the bot before digging for safety.",
+    "Dig straight down by mining blocks directly below the bot. Good if the target is far down.",
     {
       blocksToDigDown: z
         .number()
