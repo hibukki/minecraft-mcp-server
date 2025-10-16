@@ -2759,6 +2759,46 @@ function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
+    "dig-directly-down",
+    "Dig straight down by mining blocks directly below the bot. Automatically centers the bot before digging for safety.",
+    {
+      blocksToDigDown: z
+        .number()
+        .optional()
+        .default(1)
+        .describe("Number of blocks to dig down (default: 1)"),
+      allowMiningOf: z
+        .record(z.string(), z.array(z.string()))
+        .describe("Tool-to-blocks mapping for auto-mining: {iron_pickaxe: ['stone', 'cobblestone'], ...}"),
+      digTimeout: z
+        .number()
+        .optional()
+        .default(3)
+        .describe("Timeout for digging each block in seconds (default: 3)"),
+    },
+    async ({ blocksToDigDown = 1, allowMiningOf, digTimeout = 3 }): Promise<McpResponse> => {
+      try {
+        const startPos = bot.entity.position.clone();
+        const result = await digDirectlyDownIfPossible(bot, blocksToDigDown, allowMiningOf, digTimeout);
+
+        if (result.success) {
+          const endPos = bot.entity.position;
+          const verticalDist = startPos.y - endPos.y;
+          return createResponse(
+            `Successfully dug down ${result.blocksMined} block(s). ` +
+            `Descended ${verticalDist.toFixed(1)} blocks. ` +
+            `Now at position ${formatBotPosition(endPos)}`
+          );
+        } else {
+          return createResponse(result.error || `Unknown error while digging down. Dug down ${result.blocksMined} blocks`);
+        }
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
     "get-block-info",
     "Get information about a block at the specified position",
     {
