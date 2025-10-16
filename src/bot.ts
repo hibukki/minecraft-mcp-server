@@ -2949,6 +2949,8 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           output += `${index + 1}. ${marker} ${item.type} | count=${item.count} | closest_distance=${item.distance.toFixed(1)} | closest_xyz=${formatBlockPosition(pos)}\n`;
         });
 
+        output += `If you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead`
+
         return createResponse(output.trim());
       } catch (error) {
         return createErrorResponse(error as Error);
