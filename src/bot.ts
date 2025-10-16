@@ -2324,7 +2324,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "jump-over-obstacle",
-    "Jump over a small obstacle ahead of the bot in the direction toward target",
+    "Jump over a small obstacle ahead of the bot in the direction toward target. Good for obstacles of height 1 (blocking the bot's feet but not head)",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
       targetY: z.number().describe("Target Y coordinate to determine direction"),
