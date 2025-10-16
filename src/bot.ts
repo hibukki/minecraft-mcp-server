@@ -945,6 +945,58 @@ async function mineForwardsIfPossible(
 }
 
 /**
+ * Dig directly down if possible, ensuring we won't fall into a hole
+ * @param bot The minecraft bot
+ * @param blocksToDigDown How many blocks down to dig (typically 1)
+ * @param allowMiningOf Tool-to-blocks mapping for mining
+ * @param digTimeout Timeout for digging operations
+ * @returns Result with success status and blocks mined
+ */
+async function digDirectlyDownIfPossible(
+  bot: Bot,
+  blocksToDigDown: number,
+  allowMiningOf: Record<string, string[]>,
+  digTimeout: number
+): Promise<MineForwardResult> {
+  let totalBlocksMined = 0;
+
+  // Dig down multiple blocks
+  for (let i = 0; i < blocksToDigDown; i++) {
+    const currentBotPos = bot.entity.position;
+    const blockUnderUs = bot.blockAt(currentBotPos.offset(0, -1, 0));
+    const blockUnderUnderUs = bot.blockAt(currentBotPos.offset(0, -2, 0));
+
+    // Safety check: make sure there's a solid block two blocks down
+    // so we don't fall into a hole when we dig the block under us
+    if (isBlockEmpty(blockUnderUnderUs)) {
+      return {
+        success: false,
+        blocksMined: totalBlocksMined,
+        error: `Cannot dig down: block at ${formatBlockPosition(currentBotPos.offset(0, -2, 0))} is ${blockUnderUnderUs?.name || 'null'}, would fall into hole`
+      };
+    }
+
+    // Dig the block under us
+    const result = await tryMiningOneBlock(bot, blockUnderUs!, allowMiningOf, digTimeout);
+
+    if (!result.success) {
+      return {
+        success: false,
+        blocksMined: totalBlocksMined,
+        error: `Failed to dig block under bot: ${result.error}`
+      };
+    }
+
+    totalBlocksMined += result.blocksMined;
+  }
+
+  return {
+    success: true,
+    blocksMined: totalBlocksMined
+  };
+}
+
+/**
  * Get the next axis-aligned direction to move toward target
  * Returns a vector where either x is 0 or z is 0 (never both non-zero)
  */
@@ -1135,7 +1187,8 @@ async function moveOneStep(
   target: Vec3,
   allowPillarUpWith: string[],
   allowMiningOf: Record<string, string[]>,
-  digTimeout: number
+  digTimeout: number,
+  allowDigDown: boolean = true
 ): Promise<{
   blocksMined: number;
   movedBlocksCloser: number;
@@ -1212,6 +1265,21 @@ async function moveOneStep(
       movedBlocksCloser: pillarResult.movedBlocksCloser,
       pillaredUpBlocks: pillarResult.pillaredUpBlocks
     };
+  }
+
+  // Try digging down if allowed
+  if (allowDigDown) {
+    const digDownResult = await digDirectlyDownIfPossible(bot, 1, allowMiningOf, digTimeout);
+    if (digDownResult.success) {
+      log.push("Dug down")
+      return {
+        blocksMined: digDownResult.blocksMined,
+        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        pillaredUpBlocks: 0
+      };
+    } else {
+      log.push(`Dig down: ${digDownResult.error}`);
+    }
   }
 
   return {
@@ -1649,13 +1717,18 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         .record(z.string(), z.array(z.string()))
         .optional()
         .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+      allowDigDown: z
+        .boolean()
+        .optional()
+        .default(true)
+        .describe("Allow digging down when stuck (ensures there's solid ground 2 blocks below before digging)"),
       maxIterations: z
         .number()
         .optional()
         .default(10)
         .describe("Maximum number of movement iterations"),
     },
-    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, maxIterations = 10 }): Promise<McpResponse> => {
+    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, allowDigDown = true, maxIterations = 10 }): Promise<McpResponse> => {
       const startPos = bot.entity.position.clone();
       const startTime = Date.now();
       const target = new Vec3(x, y, z);
@@ -1680,7 +1753,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
           const stepResult = await moveOneStep(
             bot, target,
-            allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS
+            allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS, allowDigDown
           );
 
           totalBlocksMined += stepResult.blocksMined;
