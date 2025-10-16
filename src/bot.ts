@@ -1737,6 +1737,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       try {
         let totalBlocksMined = 0;
         let totalPillaredBlocks = 0;
+        const visitedPositions = new Set<string>();
 
         for (let iteration = 0; iteration < maxIterations; iteration++) {
           // Check if we've reached the target
@@ -1758,6 +1759,21 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
           totalBlocksMined += stepResult.blocksMined;
           totalPillaredBlocks += stepResult.pillaredUpBlocks;
+
+          // Check for circular movement
+          const currentPos = bot.entity.position;
+          const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
+          if (visitedPositions.has(posKey)) {
+            const distRemaining = currentPos.distanceTo(target);
+            const distTraveled = startPos.distanceTo(currentPos);
+            return createResponse(
+              `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
+              `Might be going in a circle. Traveled ${distTraveled.toFixed(1)} blocks, ` +
+              `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+              `${distRemaining.toFixed(1)} blocks remaining to target.`
+            );
+          }
+          visitedPositions.add(posKey);
 
           // Check if we made progress this iteration
           const madeProgress = stepResult.blocksMined > 0 ||
