@@ -1011,6 +1011,7 @@ async function moveOneStep(
   pillaredUpBlocks: number;
   error?: string;
 }> {
+  console.log("Running moveOneStep")
   const currentPos = bot.entity.position;
   const initialDistance = getDistance(bot, target);
 
@@ -1022,15 +1023,16 @@ async function moveOneStep(
 
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
-  const errorsFromPreviousSteps: string[] = [];
+  const log: string[] = [];
 
   // Path forwards empty?
   if (isBlockEmpty(blockAheadOfHead) && isBlockEmpty(blockAheadOfFeet)) {
     if (await walkForwardsIfPossible(bot, currentPos, direction)) {
+      log.push("Walked")
       const movedCloser = initialDistance - getDistance(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     }
-    errorsFromPreviousSteps.push("Walk: failed to walk forward even though path appears clear");
+    log.push("Walk: failed to walk forward even though path appears clear");
   }
 
   // Path forwards blocked?
@@ -1040,14 +1042,15 @@ async function moveOneStep(
     );
 
     if (mineResult.success) {
+      log.push("Mined.")
       return {
         blocksMined: mineResult.blocksMined,
         movedBlocksCloser: initialDistance - getDistance(bot, target),
         pillaredUpBlocks: 0,
-        error: errorsFromPreviousSteps.join("; ")
+        error: log.join("; ")
       }
     } else {
-      errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
+      log.push(`Mine error: ${mineResult.error}`);
     }
   }
 
@@ -1055,18 +1058,20 @@ async function moveOneStep(
   if (isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
     const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
     if (jumpResult.success) {
+      log.push("Jumped over object")
       const movedCloser = initialDistance - getDistance(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     } else {
-      errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
+      log.push(`Jump: ${jumpResult.error}`);
     }
   }
 
   const pillarResult = await tryPillaringUpIfSensible(bot, target, allowPillarUpWith, allowMiningOf, digTimeout);
 
   if (!pillarResult.success) {
-    errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
+    log.push(`Pillar: ${pillarResult.error}`);
   } else {
+    log.push("Did pillar-up")
     return {
       blocksMined: 0,
       movedBlocksCloser: pillarResult.movedBlocksCloser,
@@ -1078,7 +1083,7 @@ async function moveOneStep(
     blocksMined: 0,
     movedBlocksCloser: initialDistance - getDistance(bot, target),
     pillaredUpBlocks: 0,
-    error: errorsFromPreviousSteps.join("; ")
+    error: log.join("; ")
   };
 }
 
@@ -1438,7 +1443,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
           // Check if we made progress this iteration
           const madeProgress = stepResult.blocksMined > 0 ||
-                              stepResult.movedBlocksCloser >= 0.3 ||
+                              stepResult.movedBlocksCloser != 0 || // We might temporarily get further away, but at least we don't stay in place
                               stepResult.pillaredUpBlocks > 0;
 
           if (!madeProgress && iteration > 0) {
