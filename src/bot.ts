@@ -270,7 +270,7 @@ async function tryMiningOneBlock(
       return {
         success: false,
         blocksMined: 0,
-        error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is diagonal in XZ plane from bot at (${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)}). Only mining blocks that are axis-aligned in XZ (forward/back/left/right, up/down is OK).`
+        error: `Block ${block.name} at ${formatBlockPosition(blockPos)} is diagonal in XZ plane from bot at ${formatBotPosition(botPos)}. Only mining blocks that are axis-aligned in XZ (forward/back/left/right, up/down is OK).`
       };
     }
   }
@@ -284,7 +284,7 @@ async function tryMiningOneBlock(
         return {
           success: false,
           blocksMined: 0,
-          error: `Tool ${toolName} needed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) but not found in inventory`
+          error: `Tool ${toolName} needed to mine ${block.name} at ${formatBlockPosition(blockPos)} but not found in inventory`
         };
       }
       break;
@@ -298,7 +298,7 @@ async function tryMiningOneBlock(
     return {
       success: false,
       blocksMined: 0,
-      error: `Block ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}) is not in allowedMiningToolsToMinedBlocks. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks`
+      error: `Block ${block.name} at ${formatBlockPosition(blockPos)} is not in allowedMiningToolsToMinedBlocks. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks`
     };
   }
 
@@ -317,7 +317,7 @@ async function tryMiningOneBlock(
     return {
       success: false,
       blocksMined: 0,
-      error: `Cannot dig ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Block might be out of reach or require different tool`
+      error: `Cannot dig ${block.name} at ${formatBlockPosition(blockPos)}. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Block might be out of reach or require different tool`
     };
   }
 
@@ -332,7 +332,7 @@ async function tryMiningOneBlock(
     return {
       success: false,
       blocksMined: 0,
-      error: `Failed to mine ${block.name} at (${Math.floor(blockPos.x)}, ${Math.floor(blockPos.y)}, ${Math.floor(blockPos.z)}). Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Error: ${formatError(digError)}`
+      error: `Failed to mine ${block.name} at ${formatBlockPosition(blockPos)}. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks. Error: ${formatError(digError)}`
     };
   }
 }
@@ -633,6 +633,16 @@ function registerSmeltingTools(server: McpServer, bot: Bot) {
 
 // ========== Position and Movement Tools ==========
 
+// Helper functions for formatting positions
+function formatBotPosition(pos: Vec3): string {
+  return `(${pos.x.toFixed(1)}, ${pos.y.toFixed(1)}, ${pos.z.toFixed(1)})`;
+}
+
+function formatBlockPosition(pos: Vec3): string {
+  // Blocks are always at integer coordinates, but we show the center at .5
+  return `(${Math.floor(pos.x) + 0.5}, ${Math.floor(pos.y) + 0.5}, ${Math.floor(pos.z) + 0.5})`;
+}
+
 // Helper functions for pillar-up movement
 async function jumpAndWaitToBeInAir(bot: Bot): Promise<void> {
   bot.setControlState('jump', true);
@@ -750,9 +760,9 @@ async function tryPillaringUpIfSensible(
   await bot.equip(buildingBlock, 'hand');
 
   // Attempt pillar
-  const beforeY = Math.floor(currentPos.y);
+  const beforeY = currentPos.y.toFixed(1);
   const pillared = await pillarUpOneBlock(bot);
-  const afterY = Math.floor(bot.entity.position.y);
+  const afterY = bot.entity.position.y.toFixed(1);
 
   const newPos = bot.entity.position;
   const newDist = newPos.distanceTo(target);
@@ -870,8 +880,8 @@ async function jumpOverSmallObstacleIfPossible(
     return {
       success: false,
       error: `Jump failed - made only ${progress.toFixed(2)} blocks progress. ` +
-        `Before: (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}), ` +
-        `After: (${Math.floor(endPos.x)}, ${Math.floor(endPos.y)}, ${Math.floor(endPos.z)}). ` +
+        `Before: ${formatBotPosition(startPos)}, ` +
+        `After: ${formatBotPosition(endPos)}. ` +
         `Block above bot head now: ${currentBlockAboveHead?.name || 'null'}. ${blockSituation}`
     };
   }
@@ -891,7 +901,7 @@ async function mineForwardsIfPossible(
   let totalBlocksMined = 0;
 
   const botPos = bot.entity.position;
-  const botBottomHalf = `(${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`;
+  const botBottomHalf = formatBotPosition(botPos);
 
   // Try mining head block first
   if (!isBlockEmpty(blockAheadOfHead)) {
@@ -909,10 +919,10 @@ async function mineForwardsIfPossible(
 
   // Build detailed error message about what blocks we tried to mine
   const headInfo = blockAheadOfHead
-    ? `${blockAheadOfHead.name} at (${Math.floor(blockAheadOfHead.position.x)}, ${Math.floor(blockAheadOfHead.position.y)}, ${Math.floor(blockAheadOfHead.position.z)})`
+    ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
     : 'air or null';
   const feetInfo = blockAheadOfFeet
-    ? `${blockAheadOfFeet.name} at (${Math.floor(blockAheadOfFeet.position.x)}, ${Math.floor(blockAheadOfFeet.position.y)}, ${Math.floor(blockAheadOfFeet.position.z)})`
+    ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
     : 'air or null';
 
   // If we mined nothing and should return an error
@@ -969,6 +979,121 @@ function getDistance(bot: Bot, target: Vec3): number {
 }
 
 /**
+ * Get the axis-aligned direction the bot is currently facing
+ * Throws if bot is not facing a cardinal direction
+ */
+function getBotAxisAlignedDirection(bot: Bot): AxisAlignedDirection {
+  const yaw = bot.entity.yaw;
+
+  // Normalize yaw to 0-2π range
+  const normalizedYaw = ((yaw % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+
+  // Convert to degrees for easier reasoning
+  const degrees = (normalizedYaw * 180) / Math.PI;
+
+  // Check which cardinal direction (exact 90 degree increments)
+  const rounded = Math.round(degrees / 90) * 90;
+
+  if (Math.abs(degrees - rounded) > 1) {
+    // Not aligned to cardinal direction
+    throw new Error(
+      `Bot is not axis-aligned. Yaw: ${yaw.toFixed(2)} rad (${degrees.toFixed(1)}°). ` +
+      `Expected exactly: 0°, 90°, 180°, or 270°`
+    );
+  }
+
+  // Return direction based on rounded degrees
+  switch ((rounded + 360) % 360) {
+    case 0:   // South (+Z)
+      return { x: 0, y: 0, z: 1 };
+    case 90:  // West (-X)
+      return { x: -1, y: 0, z: 0 };
+    case 180: // North (-Z)
+      return { x: 0, y: 0, z: -1 };
+    case 270: // East (+X)
+      return { x: 1, y: 0, z: 0 };
+    default:
+      throw new Error(`Unexpected rounded degrees: ${rounded}`);
+  }
+}
+
+/**
+ * Calculate strafe direction and amount needed to center the bot
+ * Uses bot's yaw to determine which axis to align on, and bot's position for the amount
+ * Returns null if already centered enough
+ */
+function getStrafeDirectionAndAmount(
+  bot: Bot
+): { direction: 'left' | 'right'; amount: number } | null {
+  const currentPos = bot.entity.position;
+  const facingDirection = getBotAxisAlignedDirection(bot);
+
+  // Determine which coordinate to check based on facing direction
+  // If facing along X-axis, need to center Z. If facing along Z-axis, need to center X.
+  let perpCoord: number;
+  if (facingDirection.x !== 0) {
+    // Facing east or west (along X), check Z alignment
+    perpCoord = currentPos.z;
+  } else {
+    // Facing north or south (along Z), check X alignment
+    perpCoord = currentPos.x;
+  }
+
+  // Calculate offset from block center (0.5 is perfectly centered)
+  // e.g., if perpCoord is 10.9, then perpCoord % 1.0 = 0.9, and 0.9 - 0.5 = 0.4 (too far positive)
+  // e.g., if perpCoord is 10.1, then perpCoord % 1.0 = 0.1, and 0.1 - 0.5 = -0.4 (too far negative)
+  const offsetFromCenter = (perpCoord % 1.0) - 0.5; // Range: -0.5 to +0.5
+
+  // Threshold: if we're within 0.2 blocks of center, no strafe needed
+  const ALIGNMENT_THRESHOLD = 0.2;
+  if (Math.abs(offsetFromCenter) <= ALIGNMENT_THRESHOLD) {
+    return null;
+  }
+
+  // Determine strafe direction based on facing direction and position offset
+  let strafeDirection: 'left' | 'right';
+
+  if (facingDirection.x > 0) {      // Facing east (+X)
+    strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
+  } else if (facingDirection.x < 0) { // Facing west (-X)
+    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
+  } else if (facingDirection.z > 0) { // Facing south (+Z)
+    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
+  } else {                            // Facing north (-Z)
+    strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
+  }
+
+  return {
+    direction: strafeDirection,
+    amount: Math.abs(offsetFromCenter)
+  };
+}
+
+/**
+ * Strafe the bot toward the center of the block perpendicular to facing direction
+ * Uses 10ms per 0.1 blocks of needed movement
+ */
+async function strafeToMiddle(bot: Bot): Promise<void> {
+  const strafeInfo = getStrafeDirectionAndAmount(bot);
+
+  if (!strafeInfo) {
+    // Already centered enough
+    return;
+  }
+
+  const { direction, amount } = strafeInfo;
+
+  // 10ms per 0.1 blocks
+  const strafeDuration = Math.round((amount / 0.1) * 10);
+
+  bot.setControlState(direction, true);
+  await new Promise(r => setTimeout(r, strafeDuration));
+  bot.setControlState(direction, false);
+
+  console.log(`Strafed ${direction} for ${strafeDuration}ms (offset was ${amount.toFixed(2)})`);
+}
+
+/**
  * Get the blocks ahead of the bot's head and feet
  */
 function getBlocksAhead(
@@ -1015,8 +1140,12 @@ async function moveOneStep(
   // 1. Get the next axis-aligned direction to move toward target
   const direction = getNextDirection(bot, target);
 
+  // 2. Look in movement direction
   const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
   await bot.lookAt(lookTarget, false);
+
+  // 3. Strafe to center if needed (to avoid shoulder collisions)
+  await strafeToMiddle(bot);
 
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
@@ -1093,9 +1222,9 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       try {
         const position = bot.entity.position;
         const pos = {
-          x: Math.floor(position.x),
-          y: Math.floor(position.y),
-          z: Math.floor(position.z),
+          x: position.x.toFixed(1),
+          y: position.y.toFixed(1),
+          z: position.z.toFixed(1),
         };
 
         return createResponse(
@@ -1232,12 +1361,12 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           }
         }
 
-        const startY = Math.floor(bot.entity.position.y);
+        const startY = bot.entity.position.y.toFixed(1);
         let blocksPlaced = 0;
         const digMessage = blocksDug > 0 ? ` (cleared ${blocksDug} blocks above first)` : '';
 
         for (let i = 0; i < height; i++) {
-          const beforeY = Math.floor(bot.entity.position.y);
+          const beforeY = bot.entity.position.y.toFixed(1);
 
           // Use the pillarUpOneBlock helper
           const placed = await pillarUpOneBlock(bot);
@@ -1246,7 +1375,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           }
 
           // Check if we actually moved up
-          const afterY = Math.floor(bot.entity.position.y);
+          const afterY = bot.entity.position.y.toFixed(1);
           if (afterY <= beforeY && i < height - 1) {
             // Check if we still have blocks equipped
             const currentItem = bot.heldItem;
@@ -1277,7 +1406,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           }
         }
 
-        const finalY = Math.floor(bot.entity.position.y);
+        const finalY = bot.entity.position.y.toFixed(1);
         return createResponse(
           `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${digMessage}`
         );
@@ -1304,10 +1433,10 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
         const headInfo = blockAheadOfHead
-          ? `${blockAheadOfHead.name} at (${Math.floor(blockAheadOfHead.position.x)}, ${Math.floor(blockAheadOfHead.position.y)}, ${Math.floor(blockAheadOfHead.position.z)})`
+          ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
           : 'air or null';
         const feetInfo = blockAheadOfFeet
-          ? `${blockAheadOfFeet.name} at (${Math.floor(blockAheadOfFeet.position.x)}, ${Math.floor(blockAheadOfFeet.position.y)}, ${Math.floor(blockAheadOfFeet.position.z)})`
+          ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
           : 'air or null';
 
         return createResponse(
@@ -1424,7 +1553,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const totalDist = startPos.distanceTo(bot.entity.position);
             const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
             return createResponse(
-              `Reached target (${x}, ${y}, ${z}) from (${Math.floor(startPos.x)}, ${Math.floor(startPos.y)}, ${Math.floor(startPos.z)}). ` +
+              `Reached target (${x}, ${y}, ${z}) from ${formatBotPosition(startPos)}. ` +
               `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks. ` +
               `Final distance to target: ${arrivalCheck.distance.toFixed(2)} blocks.`
             );
@@ -1943,7 +2072,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           const pos = item.position;
           const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
           const countStr = item.count > 1 ? ` (x${item.count})` : '';
-          output += `${index + 1}. ${marker} ${item.type}${countStr} - ${item.distance.toFixed(1)} blocks away at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})\n`;
+          output += `${index + 1}. ${marker} ${item.type}${countStr} - ${item.distance.toFixed(1)} blocks away at ${formatBlockPosition(pos)}\n`;
         });
 
         return createResponse(output.trim());
@@ -1993,9 +2122,7 @@ function registerEntityTools(server: McpServer, bot: Bot) {
         return createResponse(
           `Found ${
             entity.name || (entity as any).username || entity.type
-          } at position (${Math.floor(entity.position.x)}, ${Math.floor(
-            entity.position.y
-          )}, ${Math.floor(entity.position.z)})`
+          } at position ${formatBotPosition(entity.position)}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -2039,7 +2166,7 @@ function registerEntityTools(server: McpServer, bot: Bot) {
         const entityName = entity.name || entity.type || "entity";
         const initialPos = entity.position.clone();
 
-        log("info", `Attacking ${entityName} at (${Math.floor(initialPos.x)}, ${Math.floor(initialPos.y)}, ${Math.floor(initialPos.z)})`);
+        log("info", `Attacking ${entityName} at ${formatBotPosition(initialPos)}`);
 
         // Attack until entity is dead
         let attackCount = 0;
@@ -2071,7 +2198,7 @@ function registerEntityTools(server: McpServer, bot: Bot) {
         }
 
         return createResponse(
-          `Successfully killed ${entityName} with ${attackCount} attacks at position (${Math.floor(initialPos.x)}, ${Math.floor(initialPos.y)}, ${Math.floor(initialPos.z)})`
+          `Successfully killed ${entityName} with ${attackCount} attacks at position ${formatBotPosition(initialPos)}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -2175,11 +2302,7 @@ function registerFlightTools(server: McpServer, bot: Bot) {
             `Flight timed out after ${
               FLIGHT_TIMEOUT_MS / 1000
             } seconds. The destination may be unreachable. ` +
-              `Current position: (${Math.floor(
-                currentPosAfterTimeout.x
-              )}, ${Math.floor(currentPosAfterTimeout.y)}, ${Math.floor(
-                currentPosAfterTimeout.z
-              )})`
+              `Current position: ${formatBotPosition(currentPosAfterTimeout)}`
           );
         }
 
