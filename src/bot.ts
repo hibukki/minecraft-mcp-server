@@ -974,17 +974,14 @@ async function moveOneStep(
   // 1. Get the next axis-aligned direction to move toward target
   const direction = getNextDirection(bot, target);
 
-  // Look in the direction we're moving
   const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
   await bot.lookAt(lookTarget, false);
 
-  // 2. Get blocks ahead of head and feet
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
-  // Collect error messages from each failed step
   const errorsFromPreviousSteps: string[] = [];
 
-  // 3. If both are empty: walk forwards
+  // Path forwards empty?
   if (isBlockEmpty(blockAheadOfHead) && isBlockEmpty(blockAheadOfFeet)) {
     if (await walkForwardsIfPossible(bot, currentPos, direction)) {
       const newPos = bot.entity.position;
@@ -995,7 +992,7 @@ async function moveOneStep(
     errorsFromPreviousSteps.push("Walk: failed to walk forward even though path appears clear");
   }
 
-  // 4. If both are not empty: mine forwards
+  // Path forwards blocked?
   if (!isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
     const mineResult = await mineForwardsIfPossible(
       bot, currentPos, direction, allowMiningOf, digTimeout
@@ -1003,18 +1000,10 @@ async function moveOneStep(
 
     if (!mineResult.success) {
       errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
-    } else if (mineResult.blocksMined > 0) {
-      // Try walking after mining
-      const newCurrentPos = bot.entity.position;
-      await walkForwardsIfPossible(bot, newCurrentPos, direction);
-      const newPos = bot.entity.position;
-      const newDist = newPos.distanceTo(target);
-      const movedCloser = Math.max(0, startDist - newDist);
-      return { blocksMined: mineResult.blocksMined, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     }
   }
 
-  // 5. If only the top is empty: jump over small obstacle
+  // Only the bottom blocked?
   if (isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
     const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
     if (jumpResult.success) {
@@ -1027,7 +1016,7 @@ async function moveOneStep(
     }
   }
 
-  // 6. Otherwise, if target is high up, try pillaring up
+  // TODO: If the target is high up, only then: ...
   const pillarResult = await tryPillaringUp(bot, target, allowPillarUpWith);
 
   if (!pillarResult.success) {
@@ -1038,11 +1027,6 @@ async function moveOneStep(
       movedBlocksCloser: pillarResult.movedBlocksCloser,
       pillaredUpBlocks: pillarResult.pillaredUpBlocks
     };
-  }
-
-  // 7. Return all errors from sub-functions we tried calling
-  if (errorsFromPreviousSteps.length === 0) {
-    throw new Error("BUG: moveOneStep returned with no progress and no error details. This should never happen.");
   }
 
   return {
