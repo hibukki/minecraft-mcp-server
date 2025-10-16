@@ -1194,21 +1194,23 @@ async function mineUpOneStep(
     }
   }
 
-  // Use jumpOverSmallObstacleIfPossible to perform the jump
-  // We pass blockAheadOfFeet.position as the target
-  const target = blockAheadOfFeet.position;
-  const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+  // Perform the jump up the stair
+  const startPos = currentPos.clone();
 
-  if (!jumpResult.success) {
-    return {
-      success: false,
-      error: `Failed to jump up step: ${jumpResult.error}`
-    };
-  }
+  // Look at the target stair block
+  await bot.lookAt(blockAheadOfFeet.position.offset(0.5, 0.5, 0.5), false);
+
+  // Jump and move forward
+  bot.setControlState('jump', true);
+  bot.setControlState('forward', true);
+  await new Promise(r => setTimeout(r, 200));
+  bot.setControlState('jump', false);
+  bot.setControlState('forward', false);
+  await new Promise(r => setTimeout(r, 100));
 
   // Verify we ended up approximately one block up and forward
   const finalPos = bot.entity.position;
-  const expectedY = currentPos.y + 1;
+  const expectedY = startPos.y + 1;
   const actualY = finalPos.y;
 
   // Check if we're within reasonable range of the expected Y
@@ -1216,7 +1218,7 @@ async function mineUpOneStep(
     return {
       success: false,
       error: `Bot ended up at Y=${actualY.toFixed(2)} but expected Y=${expectedY.toFixed(2)}. ` +
-        `Position: ${formatBotPosition(finalPos)}, Expected Y: ${expectedY.toFixed(2)}`
+        `Start: ${formatBotPosition(startPos)}, Final: ${formatBotPosition(finalPos)}`
     };
   }
 
