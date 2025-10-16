@@ -69,6 +69,13 @@ type MineForwardResult =
   | { success: true; blocksMined: number }
   | { success: false; blocksMined: number; error: string };
 
+/** Axis-aligned direction vector (either x is 0 or z is 0, never both non-zero) */
+type AxisAlignedDirection =
+  | { x: 1; y: 0; z: 0 }
+  | { x: -1; y: 0; z: 0 }
+  | { x: 0; y: 0; z: 1 }
+  | { x: 0; y: 0; z: -1 };
+
 // ========== Command Line Argument Parsing ==========
 
 function parseCommandLineArgs() {
@@ -737,13 +744,13 @@ async function tryPillaringUp(
 async function walkForwardsIfPossible(
   bot: Bot,
   currentPos: Vec3,
-  forwardVec: Vec3
+  direction: AxisAlignedDirection
 ): Promise<boolean> {
-  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
-  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
 
-  const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
-  const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+  const feetClear = isBlockEmpty(blockAheadFeet);
+  const headClear = isBlockEmpty(blockAheadHead);
 
   if (feetClear && headClear) {
     bot.setControlState('forward', true);
@@ -759,14 +766,14 @@ async function walkForwardsIfPossible(
 async function jumpOverSmallObstacleIfPossible(
   bot: Bot,
   currentPos: Vec3,
-  forwardVec: Vec3,
+  direction: AxisAlignedDirection,
   target: Vec3
 ): Promise<JumpResult> {
   // Check all relevant blocks
-  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
-  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
+  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
   const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
-  const blockAheadHeadPlusOne = bot.blockAt(currentPos.offset(forwardVec.x, 2, forwardVec.z).floor());
+  const blockAheadHeadPlusOne = bot.blockAt(currentPos.offset(direction.x, 2, direction.z).floor());
 
   // Build block situation string (used in all error messages)
   const blockSituation = `Block ahead of feet: ${blockAheadFeet?.name || 'null'}, ` +
@@ -774,8 +781,8 @@ async function jumpOverSmallObstacleIfPossible(
     `above head: ${blockAboveHead?.name || 'null'}, ` +
     `planned head dest (ahead+up): ${blockAheadHeadPlusOne?.name || 'null'}`;
 
-  const feetClear = !blockAheadFeet || blockAheadFeet.name === 'air' || blockAheadFeet.name === 'water' || blockAheadFeet.name === 'lava';
-  const headClear = !blockAheadHead || blockAheadHead.name === 'air' || blockAheadHead.name === 'water' || blockAheadHead.name === 'lava';
+  const feetClear = isBlockEmpty(blockAheadFeet);
+  const headClear = isBlockEmpty(blockAheadHead);
   const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
   const plannedHeadDestClear = !blockAheadHeadPlusOne || blockAheadHeadPlusOne.name === 'air';
 
@@ -841,28 +848,28 @@ async function jumpOverSmallObstacleIfPossible(
 async function mineForwardsIfPossible(
   bot: Bot,
   currentPos: Vec3,
-  forwardVec: Vec3,
+  direction: AxisAlignedDirection,
   allowMiningOf: Record<string, string[]>,
   DIG_TIMEOUT_SECONDS: number,
   returnErrorIfNothingMined: boolean = true
 ): Promise<MineForwardResult> {
-  const blockAheadHead = bot.blockAt(currentPos.offset(forwardVec.x, 1, forwardVec.z).floor());
-  const blockAheadFeet = bot.blockAt(currentPos.offset(forwardVec.x, 0, forwardVec.z).floor());
+  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
   let totalBlocksMined = 0;
 
   const botPos = bot.entity.position;
   const botBottomHalf = `(${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`;
 
   // Try mining head block first
-  if (blockAheadHead && blockAheadHead.name !== 'air' && blockAheadHead.name !== 'water' && blockAheadHead.name !== 'lava') {
-    const result = await tryMiningOneBlock(bot, blockAheadHead, allowMiningOf, DIG_TIMEOUT_SECONDS);
+  if (!isBlockEmpty(blockAheadHead)) {
+    const result = await tryMiningOneBlock(bot, blockAheadHead!, allowMiningOf, DIG_TIMEOUT_SECONDS);
     totalBlocksMined += result.blocksMined;
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
   // Try mining feet block
-  if (blockAheadFeet && blockAheadFeet.name !== 'air' && blockAheadFeet.name !== 'water' && blockAheadFeet.name !== 'lava') {
-    const result = await tryMiningOneBlock(bot, blockAheadFeet, allowMiningOf, DIG_TIMEOUT_SECONDS);
+  if (!isBlockEmpty(blockAheadFeet)) {
+    const result = await tryMiningOneBlock(bot, blockAheadFeet!, allowMiningOf, DIG_TIMEOUT_SECONDS);
     totalBlocksMined += result.blocksMined;
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
@@ -894,6 +901,47 @@ async function mineForwardsIfPossible(
   return {success: true, blocksMined: 0};
 }
 
+/**
+ * Get the next axis-aligned direction to move toward target
+ * Returns a vector where either x is 0 or z is 0 (never both non-zero)
+ */
+function getNextDirection(bot: Bot, target: Vec3): AxisAlignedDirection {
+  const currentPos = bot.entity.position;
+  const dx = target.x - currentPos.x;
+  const dz = target.z - currentPos.z;
+
+  // Choose the axis with larger absolute difference
+  if (Math.abs(dx) > Math.abs(dz)) {
+    // Move along X axis
+    return dx > 0 ? { x: 1, y: 0, z: 0 } : { x: -1, y: 0, z: 0 };
+  } else {
+    // Move along Z axis
+    return dz > 0 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 0, z: -1 };
+  }
+}
+
+/**
+ * Check if a block is empty (air, water, or lava - things we can move through)
+ */
+function isBlockEmpty(block: Block | null): boolean {
+  if (!block) return true;
+  return block.name === 'air' || block.name === 'water' || block.name === 'lava';
+}
+
+/**
+ * Get the blocks ahead of the bot's head and feet
+ */
+function getBlocksAhead(
+  bot: Bot,
+  currentPos: Vec3,
+  direction: AxisAlignedDirection
+): { blockAheadOfHead: Block | null; blockAheadOfFeet: Block | null } {
+  const blockAheadOfFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
+  const blockAheadOfHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+
+  return { blockAheadOfHead, blockAheadOfFeet };
+}
+
 function didArriveAtTarget(bot: Bot, target: Vec3): {arrived: boolean, distance: number} {
   const DISTANCE_THRESHOLD = 1.5;
   const VERTICAL_THRESHOLD = 0;
@@ -923,75 +971,68 @@ async function moveOneStep(
   const currentPos = bot.entity.position;
   const startDist = currentPos.distanceTo(target);
 
-  // Choose axis-aligned direction toward target (not diagonal)
-  // Calculate deltas for each axis
-  const dx = target.x - currentPos.x;
-  const dz = target.z - currentPos.z;
+  // 1. Get the next axis-aligned direction to move toward target
+  const direction = getNextDirection(bot, target);
 
-  // Choose the axis with larger absolute difference
-  let forwardVec: Vec3;
-  if (Math.abs(dx) > Math.abs(dz)) {
-    // Move along X axis
-    forwardVec = new Vec3(dx > 0 ? 1 : -1, 0, 0);
-  } else {
-    // Move along Z axis
-    forwardVec = new Vec3(0, 0, dz > 0 ? 1 : -1);
-  }
-
-  // Look in the direction we're moving (axis-aligned)
-  const lookTarget = currentPos.offset(forwardVec.x * 5, 0, forwardVec.z * 5);
+  // Look in the direction we're moving
+  const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
   await bot.lookAt(lookTarget, false);
+
+  // 2. Get blocks ahead of head and feet
+  const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
   // Collect error messages from each failed step
   const errorsFromPreviousSteps: string[] = [];
 
-  // Try walking forward
-  if (await walkForwardsIfPossible(bot, currentPos, forwardVec)) {
-    const newPos = bot.entity.position;
-    const newDist = newPos.distanceTo(target);
-    const movedCloser = Math.max(0, startDist - newDist);
-    return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
-  }
-  errorsFromPreviousSteps.push("Walk: path ahead blocked");
-
-  // Try jumping over obstacle
-  const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, forwardVec, target);
-  if (jumpResult.success) {
-    const newPos = bot.entity.position;
-    const newDist = newPos.distanceTo(target);
-    const movedCloser = Math.max(0, startDist - newDist);
-    return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
-  } else {
-    errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
+  // 3. If both are empty: walk forwards
+  if (isBlockEmpty(blockAheadOfHead) && isBlockEmpty(blockAheadOfFeet)) {
+    if (await walkForwardsIfPossible(bot, currentPos, direction)) {
+      const newPos = bot.entity.position;
+      const newDist = newPos.distanceTo(target);
+      const movedCloser = Math.max(0, startDist - newDist);
+      return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+    }
+    errorsFromPreviousSteps.push("Walk: failed to walk forward even though path appears clear");
   }
 
-  // Try mining forward
-  const mineResult = await mineForwardsIfPossible(
-    bot, currentPos, forwardVec, allowMiningOf, digTimeout
-  );
+  // 4. If both are not empty: mine forwards
+  if (!isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
+    const mineResult = await mineForwardsIfPossible(
+      bot, currentPos, direction, allowMiningOf, digTimeout
+    );
 
-  if (!mineResult.success) {
-    errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
+    if (!mineResult.success) {
+      errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
+    } else if (mineResult.blocksMined > 0) {
+      // Try walking after mining
+      const newCurrentPos = bot.entity.position;
+      await walkForwardsIfPossible(bot, newCurrentPos, direction);
+      const newPos = bot.entity.position;
+      const newDist = newPos.distanceTo(target);
+      const movedCloser = Math.max(0, startDist - newDist);
+      return { blocksMined: mineResult.blocksMined, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+    }
   }
 
-  if (mineResult.success && mineResult.blocksMined > 0) {
-    // Try walking after mining
-    const newCurrentPos = bot.entity.position;
-    await walkForwardsIfPossible(bot, newCurrentPos, forwardVec);
-    const newPos = bot.entity.position;
-    const newDist = newPos.distanceTo(target);
-    const movedCloser = Math.max(0, startDist - newDist);
-    return { blocksMined: mineResult.blocksMined, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+  // 5. If only the top is empty: jump over small obstacle
+  if (isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
+    const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+    if (jumpResult.success) {
+      const newPos = bot.entity.position;
+      const newDist = newPos.distanceTo(target);
+      const movedCloser = Math.max(0, startDist - newDist);
+      return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
+    } else {
+      errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
+    }
   }
 
-  // Try pillaring up if target is above
+  // 6. Otherwise, if target is high up, try pillaring up
   const pillarResult = await tryPillaringUp(bot, target, allowPillarUpWith);
 
   if (!pillarResult.success) {
     errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
-  }
-
-  if (pillarResult.success) {
+  } else {
     return {
       blocksMined: 0,
       movedBlocksCloser: pillarResult.movedBlocksCloser,
@@ -999,7 +1040,7 @@ async function moveOneStep(
     };
   }
 
-  // Stuck - this should never happen since we should have collected errors from all attempts
+  // 7. Return all errors from sub-functions we tried calling
   if (errorsFromPreviousSteps.length === 0) {
     throw new Error("BUG: moveOneStep returned with no progress and no error details. This should never happen.");
   }
