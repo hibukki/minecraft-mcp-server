@@ -1070,9 +1070,6 @@ function registerPositionTools(server: McpServer, bot: Bot) {
     }
   );
 
-  // DISABLED: move-to-position tool (pathfinder removed)
-  // Use move-in-direction, jump, and pillar-up instead
-
   server.tool(
     "look-at",
     "Make the bot look at a specific position",
@@ -1249,6 +1246,104 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         );
       } catch (error) {
         bot.setControlState("jump", false);
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "look-ahead-not-diagonally",
+    "Get blocks ahead of the bot's head and feet in the direction toward target",
+    {
+      targetX: z.number().describe("Target X coordinate to determine direction"),
+      targetY: z.number().describe("Target Y coordinate to determine direction"),
+      targetZ: z.number().describe("Target Z coordinate to determine direction"),
+    },
+    async ({ targetX, targetY, targetZ }): Promise<McpResponse> => {
+      try {
+        const target = new Vec3(targetX, targetY, targetZ);
+        const currentPos = bot.entity.position;
+        const direction = getNextDirection(bot, target);
+        const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
+
+        const headInfo = blockAheadOfHead
+          ? `${blockAheadOfHead.name} at (${Math.floor(blockAheadOfHead.position.x)}, ${Math.floor(blockAheadOfHead.position.y)}, ${Math.floor(blockAheadOfHead.position.z)})`
+          : 'air or null';
+        const feetInfo = blockAheadOfFeet
+          ? `${blockAheadOfFeet.name} at (${Math.floor(blockAheadOfFeet.position.x)}, ${Math.floor(blockAheadOfFeet.position.y)}, ${Math.floor(blockAheadOfFeet.position.z)})`
+          : 'air or null';
+
+        return createResponse(
+          `Looking ahead toward target (${targetX}, ${targetY}, ${targetZ}):\n` +
+          `Block ahead of head: ${headInfo}\n` +
+          `Block ahead of feet: ${feetInfo}`
+        );
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "mine-forwards",
+    "Mine blocks ahead of the bot in the direction toward target",
+    {
+      targetX: z.number().describe("Target X coordinate to determine direction"),
+      targetY: z.number().describe("Target Y coordinate to determine direction"),
+      targetZ: z.number().describe("Target Z coordinate to determine direction"),
+      allowMiningOf: z
+        .record(z.string(), z.array(z.string()))
+        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+      digTimeout: z
+        .number()
+        .optional()
+        .describe("Timeout for digging in seconds (default: 3)"),
+    },
+    async ({ targetX, targetY, targetZ, allowMiningOf, digTimeout = 3 }): Promise<McpResponse> => {
+      try {
+        const target = new Vec3(targetX, targetY, targetZ);
+        const currentPos = bot.entity.position;
+        const direction = getNextDirection(bot, target);
+
+        const result = await mineForwardsIfPossible(
+          bot, currentPos, direction, allowMiningOf, digTimeout, true
+        );
+
+        if (result.success) {
+          return createResponse(
+            `Successfully mined ${result.blocksMined} block(s) ahead`
+          );
+        } else {
+          return createResponse(result.error || "Failed to mine blocks");
+        }
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "jump-over-obstacle",
+    "Jump over a small obstacle ahead of the bot in the direction toward target",
+    {
+      targetX: z.number().describe("Target X coordinate to determine direction"),
+      targetY: z.number().describe("Target Y coordinate to determine direction"),
+      targetZ: z.number().describe("Target Z coordinate to determine direction"),
+    },
+    async ({ targetX, targetY, targetZ }): Promise<McpResponse> => {
+      try {
+        const target = new Vec3(targetX, targetY, targetZ);
+        const currentPos = bot.entity.position;
+        const direction = getNextDirection(bot, target);
+
+        const result = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+
+        if (result.success) {
+          return createResponse("Successfully jumped over obstacle");
+        } else {
+          return createResponse(result.error || "Failed to jump over obstacle");
+        }
+      } catch (error) {
         return createErrorResponse(error as Error);
       }
     }
