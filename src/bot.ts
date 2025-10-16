@@ -825,6 +825,24 @@ async function walkForwardsIfPossible(
   return false;
 }
 
+/**
+ * Walk forward for at least 500ms to ensure the bot moves at least one block
+ */
+async function walkForwardsAtLeastOneBlock(
+  bot: Bot,
+  direction: AxisAlignedDirection
+): Promise<void> {
+  // Look in the direction we're walking
+  const currentPos = bot.entity.position;
+  const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
+  await bot.lookAt(lookTarget, false);
+
+  // Walk forward for 500ms
+  bot.setControlState('forward', true);
+  await new Promise(r => setTimeout(r, 500));
+  bot.setControlState('forward', false);
+}
+
 async function jumpOverSmallObstacleIfPossible(
   bot: Bot,
   currentPos: Vec3,
@@ -2245,7 +2263,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "mine-forwards",
-    "Mines the block ahead of the bot's head and ahead of the bot's feet, used to make progress underground",
+    "Mines blocks ahead and walks forward, repeating for the specified number of blocks to make progress underground",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
       targetY: z.number().describe("Target Y coordinate to determine direction"),
@@ -2253,30 +2271,53 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       allowMiningOf: z
         .record(z.string(), z.array(z.string()))
         .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+      numBlocksForwards: z
+        .number()
+        .optional()
+        .default(1)
+        .describe("Number of blocks to mine and walk forward (default: 1)"),
       digTimeout: z
         .number()
         .optional()
         .describe("Timeout for digging in seconds (default: 3)"),
     },
-    async ({ targetX, targetY, targetZ, allowMiningOf, digTimeout = 3 }): Promise<McpResponse> => {
+    async ({ targetX, targetY, targetZ, allowMiningOf, numBlocksForwards = 1, digTimeout = 3 }): Promise<McpResponse> => {
+      const target = new Vec3(targetX, targetY, targetZ);
+      const startPos = bot.entity.position.clone();
+      let totalBlocksMined = 0;
+
       try {
-        const target = new Vec3(targetX, targetY, targetZ);
-        const currentPos = bot.entity.position;
-        const direction = getNextDirection(bot, target);
 
-        const result = await mineForwardsIfPossible(
-          bot, currentPos, direction, allowMiningOf, digTimeout, true
-        );
+        for (let i = 0; i < numBlocksForwards; i++) {
+          const currentPos = bot.entity.position;
+          const direction = getNextDirection(bot, target);
 
-        if (result.success) {
-          return createResponse(
-            `Successfully mined ${result.blocksMined} block(s) ahead`
+          // Mine blocks ahead
+          const result = await mineForwardsIfPossible(
+            bot, currentPos, direction, allowMiningOf, digTimeout, true
           );
-        } else {
-          return createResponse(result.error || "Failed to mine blocks");
+
+          if (!result.success) {
+            const distTraveled = startPos.distanceTo(bot.entity.position);
+            return createResponse(
+              `Mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks before encountering error: ${result.error}`
+            );
+          }
+
+          totalBlocksMined += result.blocksMined;
+
+          // Walk forward
+          await walkForwardsAtLeastOneBlock(bot, direction);
         }
+
+        const distTraveled = startPos.distanceTo(bot.entity.position);
+        return createResponse(
+          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward`
+        );
       } catch (error) {
-        return createErrorResponse(error as Error);
+        const distTraveled = startPos.distanceTo(bot.entity.position);
+        const errorMsg = `${formatError(error)}. Progress: mined ${totalBlocksMined} block(s), traveled ${distTraveled.toFixed(1)} blocks`;
+        return createErrorResponse(errorMsg);
       }
     }
   );
