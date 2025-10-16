@@ -748,11 +748,10 @@ async function walkForwardsIfPossible(
   direction: AxisAlignedDirection
 ): Promise<boolean> {
   console.log("Running walkForwardsIfPossible")
-  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
-  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+  const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
-  const feetClear = isBlockEmpty(blockAheadFeet);
-  const headClear = isBlockEmpty(blockAheadHead);
+  const feetClear = isBlockEmpty(blockAheadOfFeet);
+  const headClear = isBlockEmpty(blockAheadOfHead);
 
   if (feetClear && headClear) {
     bot.setControlState('forward', true);
@@ -771,19 +770,18 @@ async function jumpOverSmallObstacleIfPossible(
   target: Vec3
 ): Promise<JumpResult> {
   // Check all relevant blocks
-  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
-  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+  const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
   const blockAboveHead = bot.blockAt(currentPos.offset(0, 2, 0).floor());
   const blockAheadHeadPlusOne = bot.blockAt(currentPos.offset(direction.x, 2, direction.z).floor());
 
   // Build block situation string (used in all error messages)
-  const blockSituation = `Block ahead of feet: ${blockAheadFeet?.name || 'null'}, ` +
-    `ahead of head: ${blockAheadHead?.name || 'null'}, ` +
+  const blockSituation = `Block ahead of feet: ${blockAheadOfFeet?.name || 'null'}, ` +
+    `ahead of head: ${blockAheadOfHead?.name || 'null'}, ` +
     `above head: ${blockAboveHead?.name || 'null'}, ` +
     `planned head dest (ahead+up): ${blockAheadHeadPlusOne?.name || 'null'}`;
 
-  const feetClear = isBlockEmpty(blockAheadFeet);
-  const headClear = isBlockEmpty(blockAheadHead);
+  const feetClear = isBlockEmpty(blockAheadOfFeet);
+  const headClear = isBlockEmpty(blockAheadOfHead);
   const aboveHeadClear = !blockAboveHead || blockAboveHead.name === 'air';
   const plannedHeadDestClear = !blockAheadHeadPlusOne || blockAheadHeadPlusOne.name === 'air';
 
@@ -854,33 +852,32 @@ async function mineForwardsIfPossible(
   DIG_TIMEOUT_SECONDS: number,
   returnErrorIfNothingMined: boolean = true
 ): Promise<MineForwardResult> {
-  const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
-  const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
+  const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
   let totalBlocksMined = 0;
 
   const botPos = bot.entity.position;
   const botBottomHalf = `(${Math.floor(botPos.x)}, ${Math.floor(botPos.y)}, ${Math.floor(botPos.z)})`;
 
   // Try mining head block first
-  if (!isBlockEmpty(blockAheadHead)) {
-    const result = await tryMiningOneBlock(bot, blockAheadHead!, allowMiningOf, DIG_TIMEOUT_SECONDS);
+  if (!isBlockEmpty(blockAheadOfHead)) {
+    const result = await tryMiningOneBlock(bot, blockAheadOfHead!, allowMiningOf, DIG_TIMEOUT_SECONDS);
     totalBlocksMined += result.blocksMined;
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
   // Try mining feet block
-  if (!isBlockEmpty(blockAheadFeet)) {
-    const result = await tryMiningOneBlock(bot, blockAheadFeet!, allowMiningOf, DIG_TIMEOUT_SECONDS);
+  if (!isBlockEmpty(blockAheadOfFeet)) {
+    const result = await tryMiningOneBlock(bot, blockAheadOfFeet!, allowMiningOf, DIG_TIMEOUT_SECONDS);
     totalBlocksMined += result.blocksMined;
     if (!result.success) return {...result, blocksMined: totalBlocksMined};
   }
 
   // Build detailed error message about what blocks we tried to mine
-  const headInfo = blockAheadHead
-    ? `${blockAheadHead.name} at (${Math.floor(blockAheadHead.position.x)}, ${Math.floor(blockAheadHead.position.y)}, ${Math.floor(blockAheadHead.position.z)})`
+  const headInfo = blockAheadOfHead
+    ? `${blockAheadOfHead.name} at (${Math.floor(blockAheadOfHead.position.x)}, ${Math.floor(blockAheadOfHead.position.y)}, ${Math.floor(blockAheadOfHead.position.z)})`
     : 'air or null';
-  const feetInfo = blockAheadFeet
-    ? `${blockAheadFeet.name} at (${Math.floor(blockAheadFeet.position.x)}, ${Math.floor(blockAheadFeet.position.y)}, ${Math.floor(blockAheadFeet.position.z)})`
+  const feetInfo = blockAheadOfFeet
+    ? `${blockAheadOfFeet.name} at (${Math.floor(blockAheadOfFeet.position.x)}, ${Math.floor(blockAheadOfFeet.position.y)}, ${Math.floor(blockAheadOfFeet.position.z)})`
     : 'air or null';
 
   // If we mined nothing and should return an error
