@@ -1923,7 +1923,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
           setTimeout(() => {
             bot.setControlState(direction, false);
-            resolve(createResponse(`Moved ${direction} for ${duration}ms`));
+            resolve(createResponse(`Moved ${direction} for ${duration}ms. If stuck, consider show-adjacent-blocks`));
           }, duration);
         } catch (error) {
           bot.setControlState(direction, false);
@@ -2949,7 +2949,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           output += `${index + 1}. ${marker} ${item.type} | count=${item.count} | closest_distance=${item.distance.toFixed(1)} | closest_xyz=${formatBlockPosition(pos)}\n`;
         });
 
-        output += `If you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead`
+        output += `If you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
 
         return createResponse(output.trim());
       } catch (error) {
