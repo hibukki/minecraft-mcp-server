@@ -1470,6 +1470,127 @@ function getBlocksAhead(
   return { blockAheadOfHead, blockAheadOfFeet };
 }
 
+/**
+ * Get blocks adjacent to the bot in all horizontal directions and at all height levels
+ * The bot is 2 blocks tall, so we check 4 height levels:
+ * - above_head: y+2
+ * - head_height: y+1
+ * - feet_height: y+0
+ * - below_feet: y-1
+ */
+function getAdjacentBlocks(bot: Bot): string {
+  const currentPos = bot.entity.position;
+  const botX = Math.floor(currentPos.x);
+  const botY = Math.floor(currentPos.y);
+  const botZ = Math.floor(currentPos.z);
+
+  let result = '';
+
+  // Direction: higher x (x+1)
+  const higherX = botX + 1;
+  result += `direction higher x (x=${higherX}) :\n\n`;
+
+  const higherXAboveHead = [
+    bot.blockAt(new Vec3(higherX, botY + 2, botZ - 1)),
+    bot.blockAt(new Vec3(higherX, botY + 2, botZ)),
+    bot.blockAt(new Vec3(higherX, botY + 2, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const higherXHeadHeight = [
+    bot.blockAt(new Vec3(higherX, botY + 1, botZ - 1)),
+    bot.blockAt(new Vec3(higherX, botY + 1, botZ)),
+    bot.blockAt(new Vec3(higherX, botY + 1, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const higherXFeetHeight = [
+    bot.blockAt(new Vec3(higherX, botY, botZ - 1)),
+    bot.blockAt(new Vec3(higherX, botY, botZ)),
+    bot.blockAt(new Vec3(higherX, botY, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const higherXBelowFeet = [
+    bot.blockAt(new Vec3(higherX, botY - 1, botZ - 1)),
+    bot.blockAt(new Vec3(higherX, botY - 1, botZ)),
+    bot.blockAt(new Vec3(higherX, botY - 1, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  result += `above_head: ${higherXAboveHead}\n`;
+  result += `head_height: ${higherXHeadHeight}\n`;
+  result += `feet_height: ${higherXFeetHeight}\n`;
+  result += `below_feet: ${higherXBelowFeet}\n\n`;
+
+  // Direction: lower x (x-1)
+  const lowerX = botX - 1;
+  result += `direction lower x (x=${lowerX}) :\n\n`;
+
+  const lowerXAboveHead = [
+    bot.blockAt(new Vec3(lowerX, botY + 2, botZ - 1)),
+    bot.blockAt(new Vec3(lowerX, botY + 2, botZ)),
+    bot.blockAt(new Vec3(lowerX, botY + 2, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const lowerXHeadHeight = [
+    bot.blockAt(new Vec3(lowerX, botY + 1, botZ - 1)),
+    bot.blockAt(new Vec3(lowerX, botY + 1, botZ)),
+    bot.blockAt(new Vec3(lowerX, botY + 1, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const lowerXFeetHeight = [
+    bot.blockAt(new Vec3(lowerX, botY, botZ - 1)),
+    bot.blockAt(new Vec3(lowerX, botY, botZ)),
+    bot.blockAt(new Vec3(lowerX, botY, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  const lowerXBelowFeet = [
+    bot.blockAt(new Vec3(lowerX, botY - 1, botZ - 1)),
+    bot.blockAt(new Vec3(lowerX, botY - 1, botZ)),
+    bot.blockAt(new Vec3(lowerX, botY - 1, botZ + 1))
+  ].map(b => b?.name || 'null').join(', ');
+
+  result += `above_head: ${lowerXAboveHead}\n`;
+  result += `head_height: ${lowerXHeadHeight}\n`;
+  result += `feet_height: ${lowerXFeetHeight}\n`;
+  result += `below_feet: ${lowerXBelowFeet}\n\n`;
+
+  // Direction: higher z (z+1)
+  const higherZ = botZ + 1;
+  result += `direction higher z (z=${higherZ}) :\n\n`;
+
+  const higherZAboveHead = bot.blockAt(new Vec3(botX, botY + 2, higherZ))?.name || 'null';
+  const higherZHeadHeight = bot.blockAt(new Vec3(botX, botY + 1, higherZ))?.name || 'null';
+  const higherZFeetHeight = bot.blockAt(new Vec3(botX, botY, higherZ))?.name || 'null';
+  const higherZBelowFeet = bot.blockAt(new Vec3(botX, botY - 1, higherZ))?.name || 'null';
+
+  result += `above_head: ${higherZAboveHead}\n`;
+  result += `head_height: ${higherZHeadHeight}\n`;
+  result += `feet_height: ${higherZFeetHeight}\n`;
+  result += `below_feet: ${higherZBelowFeet}\n\n`;
+
+  // Direction: lower z (z-1)
+  const lowerZ = botZ - 1;
+  result += `direction lower z (z=${lowerZ}) :\n\n`;
+
+  const lowerZAboveHead = bot.blockAt(new Vec3(botX, botY + 2, lowerZ))?.name || 'null';
+  const lowerZHeadHeight = bot.blockAt(new Vec3(botX, botY + 1, lowerZ))?.name || 'null';
+  const lowerZFeetHeight = bot.blockAt(new Vec3(botX, botY, lowerZ))?.name || 'null';
+  const lowerZBelowFeet = bot.blockAt(new Vec3(botX, botY - 1, lowerZ))?.name || 'null';
+
+  result += `above_head: ${lowerZAboveHead}\n`;
+  result += `head_height: ${lowerZHeadHeight}\n`;
+  result += `feet_height: ${lowerZFeetHeight}\n`;
+  result += `below_feet: ${lowerZBelowFeet}\n\n`;
+
+  // Directly above head
+  const aboveHead = bot.blockAt(new Vec3(botX, botY + 2, botZ))?.name || 'null';
+  result += `above head: ${aboveHead}\n\n`;
+
+  // Directly below feet
+  const belowFeet = bot.blockAt(new Vec3(botX, botY - 1, botZ))?.name || 'null';
+  result += `below feet: ${belowFeet}`;
+
+  return result;
+}
+
 function didArriveAtTarget(bot: Bot, target: Vec3): {arrived: boolean, distance: number} {
   const DISTANCE_THRESHOLD = 1.5;
   const VERTICAL_THRESHOLD = 0;
@@ -2972,6 +3093,20 @@ function registerGameStateTools(server: McpServer, bot: Bot) {
         status += `  Game Mode: ${bot.game.gameMode}`;
 
         return createResponse(status);
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "show-adjacent-blocks",
+    "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
+    {},
+    async (): Promise<McpResponse> => {
+      try {
+        const result = getAdjacentBlocks(bot);
+        return createResponse(result);
       } catch (error) {
         return createErrorResponse(error as Error);
       }
