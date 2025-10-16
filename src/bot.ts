@@ -679,7 +679,9 @@ async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
 async function tryPillaringUpIfSensible(
   bot: Bot,
   target: Vec3,
-  allowPillarUpWith: string[]
+  allowPillarUpWith: string[],
+  allowMiningOf: Record<string, string[]> = {},
+  digTimeout: number = 3
 ): Promise<PillarResult> {
   const currentPos = bot.entity.position;
   const startDist = currentPos.distanceTo(target);
@@ -717,24 +719,60 @@ async function tryPillaringUpIfSensible(
     };
   }
 
-  // Equip and pillar
-  await bot.equip(pillarBlock, 'hand');
+  const buildingBlockName = pillarBlock.name;
+
+  // Check and clear blocks above (up to 3 blocks), sorted by closest first
+  const blocksToCheck = [2, 3, 4]; // Y+2, Y+3, Y+4 (closest to farthest)
+  for (const yOffset of blocksToCheck) {
+    const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
+    if (!isBlockEmpty(blockAbove)) {
+      // Try to mine this block using the mining tools mapping
+      const mineResult = await tryMiningOneBlock(bot, blockAbove!, allowMiningOf, digTimeout, true);
+      if (!mineResult.success) {
+        return {
+          success: false,
+          error: `Blocked at Y+${yOffset} by ${blockAbove!.name}, failed to clear: ${mineResult.error}`,
+          pillaredUpBlocks: 0,
+          movedBlocksCloser: 0
+        };
+      }
+      // Successfully mined, continue checking other blocks above
+    }
+  }
+
+  // Re-equip the building block (in case we switched to a tool for mining)
+  const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
+  if (!buildingBlock) {
+    return {
+      success: false,
+      error: `Lost ${buildingBlockName} from inventory while clearing blocks above`,
+      pillaredUpBlocks: 0,
+      movedBlocksCloser: 0
+    };
+  }
+  await bot.equip(buildingBlock, 'hand');
+
+  // Attempt pillar
+  const beforeY = Math.floor(currentPos.y);
   const pillared = await pillarUpOneBlock(bot);
+  const afterY = Math.floor(bot.entity.position.y);
 
   const newPos = bot.entity.position;
   const newDist = newPos.distanceTo(target);
   const movedCloser = startDist - newDist;
 
-  if (pillared) {
+  if (pillared && afterY > beforeY) {
     return {
       success: true,
       pillaredUpBlocks: 1,
       movedBlocksCloser: movedCloser
     };
   } else {
+    // Check what went wrong
+    const stillHaveBlocks = bot.heldItem && bot.heldItem.name === buildingBlockName;
     return {
       success: false,
-      error: `Failed to pillar up (target ${verticalDist.toFixed(1)} blocks above)`,
+      error: `Failed to pillar up (Y ${beforeY}→${afterY}). Still have ${buildingBlockName}: ${stillHaveBlocks}`,
       pillaredUpBlocks: 0,
       movedBlocksCloser: 0
     };
@@ -1024,7 +1062,7 @@ async function moveOneStep(
     }
   }
 
-  const pillarResult = await tryPillaringUpIfSensible(bot, target, allowPillarUpWith);
+  const pillarResult = await tryPillaringUpIfSensible(bot, target, allowPillarUpWith, allowMiningOf, digTimeout);
 
   if (!pillarResult.success) {
     errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
