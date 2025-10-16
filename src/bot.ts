@@ -69,6 +69,10 @@ type MineForwardResult =
   | { success: true; blocksMined: number }
   | { success: false; blocksMined: number; error: string };
 
+type MineDownOneStepResult =
+  | { success: true }
+  | { success: false; error: string };
+
 /** Axis-aligned direction vector (either x is 0 or z is 0, never both non-zero) */
 type AxisAlignedDirection =
   | { x: 1; y: 0; z: 0 }
@@ -997,6 +1001,146 @@ async function digDirectlyDownIfPossible(
 }
 
 /**
+ * Mine down one step by clearing blocks ahead and moving forward-and-down
+ * @param bot The minecraft bot
+ * @param direction The XZ-aligned direction to move (e.g., {x: 1, z: 0} for east)
+ * @param allowMiningOf Tool-to-blocks mapping for mining
+ * @param digTimeout Timeout for digging operations
+ * @returns Result with success status and error details if failed
+ */
+async function mineDownOneStep(
+  bot: Bot,
+  direction: AxisAlignedDirection,
+  allowMiningOf: Record<string, string[]>,
+  digTimeout: number
+): Promise<MineDownOneStepResult> {
+  const currentPos = bot.entity.position;
+
+  // Get the three blocks we need to mine: ahead of head, ahead of feet, and ahead-and-down
+  const blockAheadOfHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+  const blockAheadOfFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
+  const blockAheadAndDown = bot.blockAt(currentPos.offset(direction.x, -1, direction.z).floor());
+
+  // Mine each block in order if not empty
+  const blocksToMine = [
+    { block: blockAheadOfHead, name: "ahead of head" },
+    { block: blockAheadOfFeet, name: "ahead of feet" },
+    { block: blockAheadAndDown, name: "ahead and down" }
+  ];
+
+  for (const { block, name } of blocksToMine) {
+    if (block && !isBlockEmpty(block)) {
+      const result = await tryMiningOneBlock(bot, block, allowMiningOf, digTimeout, true);
+      if (!result.success) {
+        return {
+          success: false,
+          error: `Failed to mine block ${name}: ${result.error}`
+        };
+      }
+    }
+  }
+
+  // Calculate expected position after the step
+  const expectedPos = currentPos.offset(direction.x, -1, direction.z);
+
+  // Look at the middle of the expected position
+  const targetLookPos = expectedPos.offset(0.5, 0.5, 0.5);
+  await bot.lookAt(targetLookPos, false);
+
+  // Walk forward
+  bot.setControlState('forward', true);
+  await new Promise(r => setTimeout(r, 300));
+  bot.setControlState('forward', false);
+
+  // Wait a moment to settle
+  await new Promise(r => setTimeout(r, 200));
+
+  // Verify we ended up at the right position (on the lowest block)
+  const finalPos = bot.entity.position;
+  const targetY = expectedPos.y;
+  const actualY = finalPos.y;
+
+  // Check if we're within reasonable range of the target Y (bot is 2 blocks tall, feet at Y)
+  if (Math.abs(actualY - targetY) > 0.5) {
+    return {
+      success: false,
+      error: `Bot ended up at Y=${actualY.toFixed(2)} but expected Y=${targetY.toFixed(2)}. ` +
+        `Position: ${formatBotPosition(finalPos)}, Expected: ${formatBlockPosition(expectedPos)}`
+    };
+  }
+
+  return { success: true };
+}
+
+/**
+ * Mine steps down by repeatedly calling mineDownOneStep
+ * @param bot The minecraft bot
+ * @param stepsToGoDown Number of steps to descend
+ * @param nextStepPos The first step position (must be adjacent and one down)
+ * @param allowMiningOf Tool-to-blocks mapping for mining
+ * @param digTimeout Timeout for digging operations
+ * @returns Object with stepsCompleted and optional error
+ */
+async function mineStepsDown(
+  bot: Bot,
+  stepsToGoDown: number,
+  nextStepPos: Vec3,
+  allowMiningOf: Record<string, string[]>,
+  digTimeout: number
+): Promise<{ stepsCompleted: number; error?: string }> {
+  const currentPos = bot.entity.position;
+  const currentFloor = currentPos.floor();
+
+  // Calculate the 4 valid next positions (adjacent and one down)
+  const validNextPositions = [
+    new Vec3(currentFloor.x + 1, currentFloor.y - 1, currentFloor.z),
+    new Vec3(currentFloor.x - 1, currentFloor.y - 1, currentFloor.z),
+    new Vec3(currentFloor.x, currentFloor.y - 1, currentFloor.z + 1),
+    new Vec3(currentFloor.x, currentFloor.y - 1, currentFloor.z - 1)
+  ];
+
+  // Check if nextStepPos matches one of the valid positions
+  const nextStepFloor = nextStepPos.floor();
+  const isValid = validNextPositions.some(pos =>
+    pos.x === nextStepFloor.x && pos.y === nextStepFloor.y && pos.z === nextStepFloor.z
+  );
+
+  if (!isValid) {
+    const posStrings = validNextPositions.map(p => formatBlockPosition(p));
+    return {
+      stepsCompleted: 0,
+      error: `nextStepPos must be adjacent and one down. Current: ${formatBotPosition(currentPos)}, ` +
+        `nextStepPos: ${formatBlockPosition(nextStepPos)}. Valid positions: ${posStrings.join(', ')}`
+    };
+  }
+
+  // Calculate the XZ-aligned direction vector (same for all steps)
+  const dx = nextStepFloor.x - currentFloor.x;
+  const dz = nextStepFloor.z - currentFloor.z;
+  const direction: AxisAlignedDirection = dx !== 0
+    ? (dx > 0 ? { x: 1, y: 0, z: 0 } : { x: -1, y: 0, z: 0 })
+    : (dz > 0 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 0, z: -1 });
+
+  // Loop for the specified number of steps
+  let stepsCompleted = 0;
+
+  for (let i = 0; i < stepsToGoDown; i++) {
+    const result = await mineDownOneStep(bot, direction, allowMiningOf, digTimeout);
+
+    if (!result.success) {
+      return {
+        stepsCompleted,
+        error: result.error
+      };
+    }
+
+    stepsCompleted++;
+  }
+
+  return { stepsCompleted };
+}
+
+/**
  * Get the next axis-aligned direction to move toward target
  * Returns a vector where either x is 0 or z is 0 (never both non-zero)
  */
@@ -1695,6 +1839,47 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           return createResponse("Successfully jumped over obstacle");
         } else {
           return createResponse(result.error || "Failed to jump over obstacle");
+        }
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "mine-steps-down",
+    "Mine down multiple steps in a staircase pattern by repeatedly clearing blocks and descending",
+    {
+      allowMiningOf: z
+        .record(z.string(), z.array(z.string()))
+        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+      stepsToGoDown: z
+        .number()
+        .describe("Number of steps to descend"),
+      nextStepPos: z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number()
+      }).describe("Position of the first step (must be adjacent and one block down from current position)"),
+      digTimeout: z
+        .number()
+        .optional()
+        .describe("Timeout for digging in seconds (default: 3)"),
+    },
+    async ({ allowMiningOf, stepsToGoDown, nextStepPos, digTimeout = 3 }): Promise<McpResponse> => {
+      try {
+        const nextStepVec = new Vec3(nextStepPos.x, nextStepPos.y, nextStepPos.z);
+        const result = await mineStepsDown(bot, stepsToGoDown, nextStepVec, allowMiningOf, digTimeout);
+
+        if (result.error) {
+          return createResponse(
+            `Completed ${result.stepsCompleted} of ${stepsToGoDown} steps before encountering error: ${result.error}`
+          );
+        } else {
+          const finalPos = bot.entity.position;
+          return createResponse(
+            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}`
+          );
         }
       } catch (error) {
         return createErrorResponse(error as Error);
