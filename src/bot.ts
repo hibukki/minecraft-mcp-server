@@ -1040,12 +1040,15 @@ function getStrafeDirectionAndAmount(
   }
 
   // Calculate offset from block center (0.5 is perfectly centered)
-  // e.g., if perpCoord is 10.9, then perpCoord % 1.0 = 0.9, and 0.9 - 0.5 = 0.4 (too far positive)
-  // e.g., if perpCoord is 10.1, then perpCoord % 1.0 = 0.1, and 0.1 - 0.5 = -0.4 (too far negative)
-  const offsetFromCenter = (perpCoord % 1.0) - 0.5; // Range: -0.5 to +0.5
+  // Use ((x % 1) + 1) % 1 to normalize to 0-1 range (handles negative coords)
+  // e.g., if perpCoord is 10.9, then ((10.9 % 1) + 1) % 1 = 0.9, and 0.9 - 0.5 = 0.4 (too far positive)
+  // e.g., if perpCoord is 10.1, then ((10.1 % 1) + 1) % 1 = 0.1, and 0.1 - 0.5 = -0.4 (too far negative)
+  // e.g., if perpCoord is -11.7, then ((-11.7 % 1) + 1) % 1 = (-0.7 + 1) % 1 = 0.3, and 0.3 - 0.5 = -0.2
+  const normalizedCoord = ((perpCoord % 1.0) + 1.0) % 1.0; // Normalize to 0-1 range
+  const offsetFromCenter = normalizedCoord - 0.5; // Range: -0.5 to +0.5
 
-  // Threshold: if we're within 0.2 blocks of center, no strafe needed
-  const ALIGNMENT_THRESHOLD = 0.2;
+  // Threshold: if we're within 0.1 blocks of center, no strafe needed
+  const ALIGNMENT_THRESHOLD = 0.1;
   if (Math.abs(offsetFromCenter) <= ALIGNMENT_THRESHOLD) {
     return null;
   }
@@ -1053,13 +1056,19 @@ function getStrafeDirectionAndAmount(
   // Determine strafe direction based on facing direction and position offset
   let strafeDirection: 'left' | 'right';
 
-  if (facingDirection.x > 0) {      // Facing east (+X)
+  // offsetFromCenter < 0 means we need to increase the perpendicular coordinate
+  // offsetFromCenter > 0 means we need to decrease the perpendicular coordinate
+  if (facingDirection.x > 0) {      // Facing east (+X), perpCoord is Z
+    // Increase Z (+Z) = strafe right, Decrease Z (-Z) = strafe left
+    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
+  } else if (facingDirection.x < 0) { // Facing west (-X), perpCoord is Z
+    // Increase Z (+Z) = strafe left, Decrease Z (-Z) = strafe right
     strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
-  } else if (facingDirection.x < 0) { // Facing west (-X)
+  } else if (facingDirection.z > 0) { // Facing south (+Z), perpCoord is X
+    // Increase X (+X) = strafe right, Decrease X (-X) = strafe left
     strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
-  } else if (facingDirection.z > 0) { // Facing south (+Z)
-    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
-  } else {                            // Facing north (-Z)
+  } else {                            // Facing north (-Z), perpCoord is X
+    // Increase X (+X) = strafe left, Decrease X (-X) = strafe right
     strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
   }
 
@@ -1412,6 +1421,116 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         );
       } catch (error) {
         bot.setControlState("jump", false);
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "align-xz-and-strafe-to-center",
+    "Debug tool: Check if bot needs strafing to center and optionally execute the strafe movement",
+    {
+      executeStrafe: z
+        .boolean()
+        .optional()
+        .describe("Whether to actually execute the strafe (default: true)"),
+    },
+    async ({ executeStrafe = true }): Promise<McpResponse> => {
+      try {
+        const currentPos = bot.entity.position;
+        const yaw = bot.entity.yaw;
+
+        // Get facing direction
+        let facingDirection: AxisAlignedDirection;
+        let facingName: string;
+        try {
+          facingDirection = getBotAxisAlignedDirection(bot);
+          const normalizedYaw = ((yaw % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
+          const degrees = (normalizedYaw * 180) / Math.PI;
+          const rounded = Math.round(degrees / 90) * 90;
+          switch ((rounded + 360) % 360) {
+            case 0:   facingName = "South (+Z)"; break;
+            case 90:  facingName = "West (-X)"; break;
+            case 180: facingName = "North (-Z)"; break;
+            case 270: facingName = "East (+X)"; break;
+            default:  facingName = "Unknown"; break;
+          }
+        } catch (error) {
+          return createResponse(
+            `Bot is not axis-aligned.\n` +
+            `Position: ${formatBotPosition(currentPos)}\n` +
+            `Yaw: ${yaw.toFixed(2)} rad (${((yaw * 180) / Math.PI).toFixed(1)}°)\n` +
+            `Error: ${formatError(error)}`
+          );
+        }
+
+        // Determine which coordinate to check
+        let perpCoord: number;
+        let perpAxis: string;
+        if (facingDirection.x !== 0) {
+          perpCoord = currentPos.z;
+          perpAxis = "Z";
+        } else {
+          perpCoord = currentPos.x;
+          perpAxis = "X";
+        }
+
+        // Calculate alignment info
+        const normalizedCoord = ((perpCoord % 1.0) + 1.0) % 1.0;
+        const offsetFromCenter = normalizedCoord - 0.5;
+        const ALIGNMENT_THRESHOLD = 0.1;
+        const isAligned = Math.abs(offsetFromCenter) <= ALIGNMENT_THRESHOLD;
+
+        // Get strafe direction info
+        const strafeInfo = getStrafeDirectionAndAmount(bot);
+
+        let result = `Bot Alignment Debug Info:\n\n`;
+        result += `Position: ${formatBotPosition(currentPos)}\n`;
+        result += `Yaw: ${yaw.toFixed(2)} rad (${((yaw * 180) / Math.PI).toFixed(1)}°)\n`;
+        result += `Facing: ${facingName}\n\n`;
+        result += `Perpendicular axis to check: ${perpAxis}\n`;
+        result += `${perpAxis} coordinate: ${perpCoord.toFixed(3)}\n`;
+        result += `Normalized (0-1 range): ${normalizedCoord.toFixed(3)}\n`;
+        result += `Offset from center: ${offsetFromCenter.toFixed(3)} blocks\n`;
+        result += `Threshold: ±${ALIGNMENT_THRESHOLD} blocks\n\n`;
+
+        if (isAligned) {
+          result += `✓ Bot is already centered (within threshold)\n`;
+          result += `No strafe needed.`;
+        } else {
+          result += `✗ Bot needs centering\n`;
+          if (strafeInfo) {
+            result += `Strafe direction: ${strafeInfo.direction}\n`;
+            result += `Strafe amount: ${strafeInfo.amount.toFixed(3)} blocks\n`;
+            result += `Strafe duration: ${Math.round((strafeInfo.amount / 0.1) * 10)}ms\n\n`;
+
+            if (executeStrafe) {
+              const beforePos = bot.entity.position.clone();
+              await strafeToMiddle(bot);
+              const afterPos = bot.entity.position;
+
+              // Calculate actual movement
+              const moved = afterPos.distanceTo(beforePos);
+              const newOffset = facingDirection.x !== 0
+                ? (((afterPos.z % 1.0) + 1.0) % 1.0) - 0.5
+                : (((afterPos.x % 1.0) + 1.0) % 1.0) - 0.5;
+
+              result += `Strafe executed!\n`;
+              result += `Before: ${formatBotPosition(beforePos)}\n`;
+              result += `After: ${formatBotPosition(afterPos)}\n`;
+              result += `Moved: ${moved.toFixed(3)} blocks\n`;
+              result += `New offset from center: ${newOffset.toFixed(3)} blocks`;
+            } else {
+              result += `Strafe NOT executed (executeStrafe=false)`;
+            }
+          } else {
+            result += `Warning: getStrafeDirectionAndAmount returned null even though bot is not aligned!\n`;
+            result += `This might indicate a bug in the strafe logic.`;
+          }
+        }
+
+        return createResponse(result);
+      } catch (error) {
         return createErrorResponse(error as Error);
       }
     }
