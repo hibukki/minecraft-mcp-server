@@ -2361,7 +2361,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "pathfind-and-move-to",
+    "pathfind-and-move-or-dig-to",
     "Move to a target position with auto-mining and optional pillar-up",
     {
       x: z.number().describe("Target X coordinate"),
