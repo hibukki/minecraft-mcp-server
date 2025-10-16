@@ -10,6 +10,7 @@ import minecraftData from "minecraft-data";
 import yargs from "yargs";
 import type { Arguments } from "yargs";
 import { hideBin } from "yargs/helpers";
+import { appendFileSync } from "fs";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import type { Entity } from "prismarine-entity";
@@ -703,11 +704,11 @@ async function tryPillaringUpIfSensible(
   const verticalDist = Math.abs(currentPos.y - target.y);
 
   // Check if we should pillar (target is above)
-  const VERTICAL_THRESHOLD = 1.0;
-  if (target.y <= currentPos.y + 1 || verticalDist <= VERTICAL_THRESHOLD) {
+  // Allow pillaring even for small vertical distances
+  if (target.y <= currentPos.y) {
     return {
       success: false,
-      error: `Target not above us (vertical dist: ${verticalDist.toFixed(1)})`,
+      error: `Target not above us (target.y=${target.y}, current.y=${currentPos.y})`,
       pillaredUpBlocks: 0,
       movedBlocksCloser: 0
     };
@@ -1445,15 +1446,58 @@ async function strafeToMiddle(bot: Bot): Promise<void> {
   }
 
   const { direction, amount } = strafeInfo;
+  const posBefore = bot.entity.position.clone();
 
-  // 10ms per 0.1 blocks
-  const strafeDuration = Math.round((amount / 0.1) * 10);
+  // Movement has a startup delay of ~100ms, then moves at ~0.4 blocks per 100ms
+  // So for 0.1 blocks: (0.1 / 0.4) * 100ms = 25ms of actual movement + 100ms startup
+  const movementTime = Math.round((amount / 0.4) * 100);
+  const strafeDuration = 100 + movementTime;
 
   bot.setControlState(direction, true);
   await new Promise(r => setTimeout(r, strafeDuration));
   bot.setControlState(direction, false);
 
-  console.log(`Strafed ${direction} for ${strafeDuration}ms (offset was ${amount.toFixed(2)})`);
+  const posAfter = bot.entity.position.clone();
+  const actualMovement = posBefore.distanceTo(posAfter);
+
+  // Verify we're now centered (within 0.2 blocks)
+  const afterStrafe = getStrafeDirectionAndAmount(bot);
+  const finalOffset = afterStrafe ? afterStrafe.amount : 0;
+
+  const strafeDataMsg =
+    `Strafe data: dir=${direction}, before=${amount.toFixed(3)}b from center, ` +
+    `duration=${strafeDuration}ms, actual_moved=${actualMovement.toFixed(3)}b, ` +
+    `after=${Math.abs(finalOffset).toFixed(3)}b from center, ` +
+    `pos_before=(${posBefore.x.toFixed(2)},${posBefore.z.toFixed(2)}), ` +
+    `pos_after=(${posAfter.x.toFixed(2)},${posAfter.z.toFixed(2)})`;
+
+  console.log(strafeDataMsg);
+
+  if (afterStrafe && Math.abs(afterStrafe.amount) > 0.2) {
+    // Log to file for analysis
+    appendFileSync('strafe_log.txt', strafeDataMsg + '\n');
+
+    throw new Error(`Failed to center: still ${afterStrafe.amount.toFixed(2)}b from center after strafing. ${strafeDataMsg}`);
+  }
+}
+
+/**
+ * Center the bot in both X and Z axes by rotating to each axis and strafing
+ */
+async function strafeToMiddleBothXZ(bot: Bot): Promise<void> {
+  // Save original yaw
+  const originalYaw = bot.entity.yaw;
+
+  // Center in X direction (face north or south)
+  await bot.look(0, 0, false); // Face south (0 yaw = south in Minecraft)
+  await strafeToMiddle(bot);
+
+  // Center in Z direction (face east or west)
+  await bot.look(Math.PI / 2, 0, false); // Face west (90 degrees)
+  await strafeToMiddle(bot);
+
+  // Restore original yaw
+  await bot.look(originalYaw, 0, false);
 }
 
 /**
@@ -1629,6 +1673,35 @@ async function moveOneStep(
   console.log("Running moveOneStep")
   const currentPos = bot.entity.position;
   const initialDistance = getDistance(bot, target);
+
+  // If we're close horizontally (≤1 block in XZ), skip horizontal movement and try pillaring
+  const horizontalDist = Math.sqrt(
+    Math.pow(currentPos.x - target.x, 2) +
+    Math.pow(currentPos.z - target.z, 2)
+  );
+
+  if (horizontalDist <= 1.0 && target.y > currentPos.y) {
+    // We're close horizontally and need to go up - center in both axes and try pillaring directly
+    await strafeToMiddleBothXZ(bot);
+
+    const pillarResult = await tryPillaringUpIfSensible(bot, target, allowPillarUpWith, allowMiningOf, digTimeout);
+
+    if (pillarResult.success) {
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: pillarResult.movedBlocksCloser,
+        pillaredUpBlocks: pillarResult.pillaredUpBlocks
+      };
+    } else {
+      // Pillaring failed - return the error so we know what went wrong
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: 0,
+        pillaredUpBlocks: 0,
+        error: `Close horizontally (${horizontalDist.toFixed(2)}b), tried pillar: ${pillarResult.error}`
+      };
+    }
+  }
 
   // 1. Get the next axis-aligned direction to move toward target
   const direction = getNextDirection(bot, target);
@@ -2255,6 +2328,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         let totalBlocksMined = 0;
         let totalPillaredBlocks = 0;
         const visitedPositions = new Set<string>();
+        const stepLog: string[] = [];
 
         for (let iteration = 0; iteration < maxIterations; iteration++) {
           // Check if we've reached the target
@@ -2264,15 +2338,25 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
             return createResponse(
               `Reached target (${x}, ${y}, ${z}) from ${formatBotPosition(startPos)}. ` +
-              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks. ` +
-              `Final distance to target: ${arrivalCheck.distance.toFixed(2)} blocks.`
+              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.\n` +
+              `Steps: ${stepLog.join('; ')}`
             );
           }
 
+          const posBeforeStep = bot.entity.position.clone();
           const stepResult = await moveOneStep(
             bot, target,
             allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS, allowDigDown
           );
+          const posAfterStep = bot.entity.position.clone();
+
+          // Log what happened in this step
+          const stepDesc = [];
+          if (stepResult.blocksMined > 0) stepDesc.push(`mined ${stepResult.blocksMined}`);
+          if (stepResult.pillaredUpBlocks > 0) stepDesc.push(`pillared ${stepResult.pillaredUpBlocks}`);
+          if (stepResult.movedBlocksCloser !== 0) stepDesc.push(`moved ${stepResult.movedBlocksCloser.toFixed(1)}b`);
+          if (stepResult.error) stepDesc.push(stepResult.error);
+          stepLog.push(`[${iteration+1}] ${formatBotPosition(posAfterStep)}: ${stepDesc.join(', ') || 'no action'}`);
 
           totalBlocksMined += stepResult.blocksMined;
           totalPillaredBlocks += stepResult.pillaredUpBlocks;
@@ -2285,9 +2369,9 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             const distTraveled = startPos.distanceTo(currentPos);
             return createResponse(
               `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-              `Might be going in a circle or stuck. Traveled ${distTraveled.toFixed(1)} blocks, ` +
-              `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-              `${distRemaining.toFixed(1)} blocks remaining to target.`
+              `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+              `Steps: ${stepLog.join('; ')}`
             );
           }
           visitedPositions.add(posKey);
@@ -2305,7 +2389,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
               `${stepResult.error || "Stuck at this iteration with no info from moveOneStep (probably a bug: info should normally be available)"}. ` +
               `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
               `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-              `${distRemaining.toFixed(1)} blocks remaining to target.`
+              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+              `Steps: ${stepLog.join('; ')}`
             );
           }
         }

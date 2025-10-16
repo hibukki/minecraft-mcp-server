@@ -1,0 +1,1 @@
+Strafe data: dir=right, before=0.344b from center, duration=34ms, actual_moved=0.000b, after=0.344b from center, pos_before=(-16.30,-3.16), pos_after=(-16.30,-3.16)
