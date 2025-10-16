@@ -1435,49 +1435,71 @@ function getStrafeDirectionAndAmount(
 
 /**
  * Strafe the bot toward the center of the block perpendicular to facing direction
- * Uses 10ms per 0.1 blocks of needed movement
+ *
+ * Movement observations (tested while facing south, axis-aligned):
+ * - 10ms: 0 blocks
+ * - 20ms: 0 blocks
+ * - 25ms: 0 blocks
+ * - 30ms: 0.2 blocks
+ * - 40ms: 0.4 blocks
+ * - 50ms: 0.2 blocks (2 attempts)
+ * - 60ms: 0.2 blocks
+ * - 75ms: 0.4 blocks
+ * - 100ms: 0.4 blocks
+ * - 1000ms: 0.4 blocks (movement caps at 0.4 blocks per control state)
+ *
+ * Strategy: Use 50ms strafes (moves 0.2 blocks) in a loop until centered within 0.2 blocks.
+ * This avoids overshooting and hitting the opposite wall.
  */
 async function strafeToMiddle(bot: Bot): Promise<void> {
-  const strafeInfo = getStrafeDirectionAndAmount(bot);
+  const MAX_ATTEMPTS = 3;
 
-  if (!strafeInfo) {
-    // Already centered enough
-    return;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    const strafeInfo = getStrafeDirectionAndAmount(bot);
+
+    if (!strafeInfo) {
+      // Already centered enough
+      return;
+    }
+
+    const { direction, amount } = strafeInfo;
+    const posBefore = bot.entity.position.clone();
+
+    // Use 50ms which moves ~0.2 blocks
+    const strafeDuration = 50;
+
+    bot.setControlState(direction, true);
+    await new Promise(r => setTimeout(r, strafeDuration));
+    bot.setControlState(direction, false);
+
+    const posAfter = bot.entity.position.clone();
+    const actualMovement = posBefore.distanceTo(posAfter);
+
+    // Check final position
+    const afterStrafe = getStrafeDirectionAndAmount(bot);
+    const finalOffset = afterStrafe ? afterStrafe.amount : 0;
+
+    const strafeDataMsg =
+      `Strafe attempt ${attempt + 1}: dir=${direction}, before=${amount.toFixed(3)}b from center, ` +
+      `duration=${strafeDuration}ms, actual_moved=${actualMovement.toFixed(3)}b, ` +
+      `after=${Math.abs(finalOffset).toFixed(3)}b from center, ` +
+      `pos_before=(${posBefore.x.toFixed(2)},${posBefore.z.toFixed(2)}), ` +
+      `pos_after=(${posAfter.x.toFixed(2)},${posAfter.z.toFixed(2)})`;
+
+    console.log(strafeDataMsg);
+
+    // If we're now centered (within 0.2 blocks), we're done
+    if (!afterStrafe || Math.abs(afterStrafe.amount) <= 0.2) {
+      return;
+    }
   }
 
-  const { direction, amount } = strafeInfo;
-  const posBefore = bot.entity.position.clone();
-
-  // Movement has a startup delay of ~100ms, then moves at ~0.4 blocks per 100ms
-  // So for 0.1 blocks: (0.1 / 0.4) * 100ms = 25ms of actual movement + 100ms startup
-  const movementTime = Math.round((amount / 0.4) * 100);
-  const strafeDuration = 100 + movementTime;
-
-  bot.setControlState(direction, true);
-  await new Promise(r => setTimeout(r, strafeDuration));
-  bot.setControlState(direction, false);
-
-  const posAfter = bot.entity.position.clone();
-  const actualMovement = posBefore.distanceTo(posAfter);
-
-  // Verify we're now centered (within 0.2 blocks)
-  const afterStrafe = getStrafeDirectionAndAmount(bot);
-  const finalOffset = afterStrafe ? afterStrafe.amount : 0;
-
-  const strafeDataMsg =
-    `Strafe data: dir=${direction}, before=${amount.toFixed(3)}b from center, ` +
-    `duration=${strafeDuration}ms, actual_moved=${actualMovement.toFixed(3)}b, ` +
-    `after=${Math.abs(finalOffset).toFixed(3)}b from center, ` +
-    `pos_before=(${posBefore.x.toFixed(2)},${posBefore.z.toFixed(2)}), ` +
-    `pos_after=(${posAfter.x.toFixed(2)},${posAfter.z.toFixed(2)})`;
-
-  console.log(strafeDataMsg);
-
-  if (afterStrafe && Math.abs(afterStrafe.amount) > 0.2) {
-    // Log to file for analysis
-    appendFileSync('strafe_log.txt', strafeDataMsg + '\n');
-
-    throw new Error(`Failed to center: still ${afterStrafe.amount.toFixed(2)}b from center after strafing. ${strafeDataMsg}`);
+  // After MAX_ATTEMPTS, check if we're close enough
+  const finalCheck = getStrafeDirectionAndAmount(bot);
+  if (finalCheck && Math.abs(finalCheck.amount) > 0.2) {
+    const errorMsg = `Failed to center after ${MAX_ATTEMPTS} attempts: still ${finalCheck.amount.toFixed(2)}b from center`;
+    appendFileSync('strafe_log.txt', errorMsg + '\n');
+    throw new Error(errorMsg);
   }
 }
 
