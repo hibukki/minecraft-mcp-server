@@ -402,7 +402,7 @@ function createMcpServer(bot: Bot) {
   registerBlockTools(server, bot);
   registerEntityTools(server, bot);
   registerChatTools(server, bot);
-  registerFlightTools(server, bot);
+  // registerFlightTools(server, bot);
   registerGameStateTools(server, bot);
 
   return server;
