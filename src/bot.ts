@@ -645,6 +645,7 @@ async function waitToLandFromAir(bot: Bot): Promise<void> {
   await new Promise(r => setTimeout(r, 300)); // Wait to land
 }
 
+// TODO: This should also return an error if it fails
 async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
   await jumpAndWaitToBeInAir(bot);
 
@@ -675,7 +676,7 @@ async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
  * Try to pillar up one block, handling all validation and errors
  * Returns detailed error info if pillaring fails
  */
-async function tryPillaringUp(
+async function tryPillaringUpIfSensible(
   bot: Bot,
   target: Vec3,
   allowPillarUpWith: string[]
@@ -722,7 +723,7 @@ async function tryPillaringUp(
 
   const newPos = bot.entity.position;
   const newDist = newPos.distanceTo(target);
-  const movedCloser = Math.max(0, startDist - newDist);
+  const movedCloser = startDist - newDist;
 
   if (pillared) {
     return {
@@ -746,6 +747,7 @@ async function walkForwardsIfPossible(
   currentPos: Vec3,
   direction: AxisAlignedDirection
 ): Promise<boolean> {
+  console.log("Running walkForwardsIfPossible")
   const blockAheadFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
   const blockAheadHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
 
@@ -754,9 +756,8 @@ async function walkForwardsIfPossible(
 
   if (feetClear && headClear) {
     bot.setControlState('forward', true);
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 200));
     bot.setControlState('forward', false);
-    await new Promise(r => setTimeout(r, 50));
     return true;
   }
 
@@ -929,6 +930,13 @@ function isBlockEmpty(block: Block | null): boolean {
 }
 
 /**
+ * Get the distance from the bot to the target
+ */
+function getDistance(bot: Bot, target: Vec3): number {
+  return bot.entity.position.distanceTo(target);
+}
+
+/**
  * Get the blocks ahead of the bot's head and feet
  */
 function getBlocksAhead(
@@ -969,7 +977,7 @@ async function moveOneStep(
   error?: string;
 }> {
   const currentPos = bot.entity.position;
-  const startDist = currentPos.distanceTo(target);
+  const initialDistance = getDistance(bot, target);
 
   // 1. Get the next axis-aligned direction to move toward target
   const direction = getNextDirection(bot, target);
@@ -984,9 +992,7 @@ async function moveOneStep(
   // Path forwards empty?
   if (isBlockEmpty(blockAheadOfHead) && isBlockEmpty(blockAheadOfFeet)) {
     if (await walkForwardsIfPossible(bot, currentPos, direction)) {
-      const newPos = bot.entity.position;
-      const newDist = newPos.distanceTo(target);
-      const movedCloser = Math.max(0, startDist - newDist);
+      const movedCloser = initialDistance - getDistance(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     }
     errorsFromPreviousSteps.push("Walk: failed to walk forward even though path appears clear");
@@ -1007,17 +1013,14 @@ async function moveOneStep(
   if (isBlockEmpty(blockAheadOfHead) && !isBlockEmpty(blockAheadOfFeet)) {
     const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
     if (jumpResult.success) {
-      const newPos = bot.entity.position;
-      const newDist = newPos.distanceTo(target);
-      const movedCloser = Math.max(0, startDist - newDist);
+      const movedCloser = initialDistance - getDistance(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     } else {
       errorsFromPreviousSteps.push(`Jump: ${jumpResult.error}`);
     }
   }
 
-  // TODO: If the target is high up, only then: ...
-  const pillarResult = await tryPillaringUp(bot, target, allowPillarUpWith);
+  const pillarResult = await tryPillaringUpIfSensible(bot, target, allowPillarUpWith);
 
   if (!pillarResult.success) {
     errorsFromPreviousSteps.push(`Pillar: ${pillarResult.error}`);
@@ -1031,7 +1034,7 @@ async function moveOneStep(
 
   return {
     blocksMined: 0,
-    movedBlocksCloser: 0,
+    movedBlocksCloser: initialDistance - getDistance(bot, target),
     pillaredUpBlocks: 0,
     error: errorsFromPreviousSteps.join("; ")
   };
@@ -1709,8 +1712,8 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           'bedrock', 'cave_air', 'void_air'
         ]);
 
-        // Map to track closest instance of each block type
-        const blockTypes = new Map<string, { distance: number; position: Vec3 }>();
+        // Map to track closest instance and count of each block type
+        const blockTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
 
         // Search for interesting blocks
         const minPos = botPos.offset(-maxDistanceSideways, -maxDistanceUpDown, -maxDistanceSideways);
@@ -1727,15 +1730,21 @@ function registerBlockTools(server: McpServer, bot: Bot) {
               const distance = botPos.distanceTo(blockPos);
               const existing = blockTypes.get(block.name);
 
-              if (!existing || distance < existing.distance) {
-                blockTypes.set(block.name, { distance, position: blockPos });
+              if (!existing) {
+                blockTypes.set(block.name, { distance, position: blockPos, count: 1 });
+              } else {
+                existing.count++;
+                if (distance < existing.distance) {
+                  existing.distance = distance;
+                  existing.position = blockPos;
+                }
               }
             }
           }
         }
 
         // Search for entities
-        const entityTypes = new Map<string, { distance: number; position: Vec3 }>();
+        const entityTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
 
         for (const entityId in bot.entities) {
           const entity = bot.entities[entityId];
@@ -1757,20 +1766,26 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           const entityName = entity.name || (entity as any).username || entity.type || 'unknown';
           const existing = entityTypes.get(entityName);
 
-          if (!existing || distance < existing.distance) {
-            entityTypes.set(entityName, { distance, position: entity.position });
+          if (!existing) {
+            entityTypes.set(entityName, { distance, position: entity.position, count: 1 });
+          } else {
+            existing.count++;
+            if (distance < existing.distance) {
+              existing.distance = distance;
+              existing.position = entity.position;
+            }
           }
         }
 
         // Combine blocks and entities
-        const allItems: Array<{ type: string; distance: number; position: Vec3; category: 'block' | 'entity' }> = [];
+        const allItems: Array<{ type: string; distance: number; position: Vec3; count: number; category: 'block' | 'entity' }> = [];
 
         blockTypes.forEach((data, name) => {
-          allItems.push({ type: name, distance: data.distance, position: data.position, category: 'block' });
+          allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'block' });
         });
 
         entityTypes.forEach((data, name) => {
-          allItems.push({ type: name, distance: data.distance, position: data.position, category: 'entity' });
+          allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'entity' });
         });
 
         // Sort by distance (closest first) and limit results
@@ -1788,7 +1803,8 @@ function registerBlockTools(server: McpServer, bot: Bot) {
         limitedItems.forEach((item, index) => {
           const pos = item.position;
           const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
-          output += `${index + 1}. ${marker} ${item.type} - ${item.distance.toFixed(1)} blocks away at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})\n`;
+          const countStr = item.count > 1 ? ` (x${item.count})` : '';
+          output += `${index + 1}. ${marker} ${item.type}${countStr} - ${item.distance.toFixed(1)} blocks away at (${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})\n`;
         });
 
         return createResponse(output.trim());
