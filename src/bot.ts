@@ -1883,7 +1883,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "jump",
+    "jump-in-place",
     "Make the bot jump",
     {},
     async (): Promise<McpResponse> => {
@@ -1891,7 +1891,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         bot.setControlState("jump", true);
         setTimeout(() => bot.setControlState("jump", false), 250);
 
-        return createResponse("Successfully jumped");
+        return createResponse("Successfully jumped in place");
       } catch (error) {
         return createErrorResponse(error as Error);
       }
