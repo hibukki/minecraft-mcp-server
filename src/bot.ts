@@ -2663,10 +2663,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
         limitedItems.forEach((item, index) => {
           const pos = item.position;
           const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
-          output += `${index + 1}. ${marker} ${item.type}\n`;
-          output += `   count=${item.count}\n`;
-          output += `   closest_distance=${item.distance.toFixed(1)}\n`;
-          output += `   closest_xyz=${formatBlockPosition(pos)}\n`;
+          output += `${index + 1}. ${marker} ${item.type} | count=${item.count} | closest_distance=${item.distance.toFixed(1)} | closest_xyz=${formatBlockPosition(pos)}\n`;
         });
 
         return createResponse(output.trim());
