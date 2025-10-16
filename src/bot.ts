@@ -288,6 +288,11 @@ async function tryMiningOneBlock(
   let tool = null;
   for (const [toolName, blockNames] of Object.entries(allowedMiningToolsToMinedBlocks)) {
     if (blockNames.includes(block.name)) {
+      // "hand" means use empty hand (no tool), so skip inventory search
+      if (toolName === "hand") {
+        tool = "hand" as any; // Sentinel value to indicate we found a match but don't need to equip
+        break;
+      }
       tool = bot.inventory.items().find(item => item.name === toolName);
       if (!tool) {
         return {
@@ -311,9 +316,12 @@ async function tryMiningOneBlock(
     };
   }
 
-  // Equip tool if found
-  if (tool) {
+  // Equip tool if found (unless it's "hand" which means use empty hand)
+  if (tool && tool !== "hand") {
     await bot.equip(tool, 'hand');
+  } else if (tool === "hand") {
+    // Unequip to use empty hand
+    await bot.unequip('hand');
   }
 
   // Look at the block
@@ -967,6 +975,9 @@ async function digDirectlyDownIfPossible(
   allowMiningOf: Record<string, string[]>,
   digTimeout: number
 ): Promise<MineForwardResult> {
+  // Center the bot so we're digging straight down from the middle of the block
+  await strafeToMiddleBothXZ(bot);
+
   let totalBlocksMined = 0;
 
   // Dig down multiple blocks
@@ -1723,7 +1734,7 @@ async function moveOneStep(
   const currentPos = bot.entity.position;
   const initialDistance = getDistance(bot, target);
 
-  // If we're close horizontally (≤1 block in XZ), skip horizontal movement and try pillaring
+  // If we're close horizontally (≤1 block in XZ), skip horizontal movement and focus on vertical movement
   const horizontalDist = Math.sqrt(
     Math.pow(currentPos.x - target.x, 2) +
     Math.pow(currentPos.z - target.z, 2)
@@ -1748,6 +1759,25 @@ async function moveOneStep(
         movedBlocksCloser: 0,
         pillaredUpBlocks: 0,
         error: `Close horizontally (${horizontalDist.toFixed(2)}b), tried pillar: ${pillarResult.error}`
+      };
+    }
+  }
+
+  if (horizontalDist <= 1.0 && target.y < currentPos.y && allowDigDown) {
+    // We're close horizontally and need to go down - try digging down directly
+    const digDownResult = await digDirectlyDownIfPossible(bot, 1, allowMiningOf, digTimeout);
+    if (digDownResult.success) {
+      return {
+        blocksMined: digDownResult.blocksMined,
+        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        pillaredUpBlocks: 0
+      };
+    } else {
+      return {
+        blocksMined: 0,
+        movedBlocksCloser: 0,
+        pillaredUpBlocks: 0,
+        error: `Close horizontally (${horizontalDist.toFixed(2)}b), tried dig down: ${digDownResult.error}`
       };
     }
   }
@@ -1900,7 +1930,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "move-in-direction",
-    "Move the bot in a specific direction for a duration",
+    "Move the bot in a specific direction for a duration. This is a low level command that doesn't try to deal with obstacles",
     {
       direction: z
         .enum(["forward", "back", "left", "right"])
@@ -2433,14 +2463,14 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           const currentPos = bot.entity.position;
           const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
           if (visitedPositions.has(posKey)) {
-            const distRemaining = currentPos.distanceTo(target);
-            const distTraveled = startPos.distanceTo(currentPos);
-            return createResponse(
-              `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-              `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-              `Steps: ${stepLog.join('; ')}`
-            );
+            // const distRemaining = currentPos.distanceTo(target);
+            // const distTraveled = startPos.distanceTo(currentPos);
+            // return createResponse(
+            //   `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
+            //   `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+            //   `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+            //   `Steps: ${stepLog.join('; ')}`
+            // );
           }
           visitedPositions.add(posKey);
 
@@ -2469,7 +2499,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         return createResponse(
           `Reached iteration limit (${maxIterations} iterations). Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
           `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
-          `Call move-to again to continue.`
+          `Call move-to again to continue.\n` +
+          `Steps: ${stepLog.join('; ')}`
         );
 
       } catch (error) {
