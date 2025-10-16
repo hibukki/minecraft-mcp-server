@@ -1590,7 +1590,7 @@ function getAdjacentBlocks(bot: Bot): string {
 
   // At bot feet (where the feet actually are)
   const atFeet = bot.blockAt(new Vec3(botX, botY, botZ))?.name || 'null';
-  result += `at feet: ${atFeet}\n\n`;
+  result += `at feet: ${atFeet} (x,y,z=${botX},${botY},${botZ}) \n\n`;
 
   // Directly below feet
   const belowFeet = bot.blockAt(new Vec3(botX, botY - 1, botZ))?.name || 'null';
