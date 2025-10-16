@@ -2675,7 +2675,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "dig-block",
+    "dig-adjacent-block",
     "Dig one block",
     {
       x: z.number().describe("X coordinate"),
@@ -2706,7 +2706,7 @@ function registerBlockTools(server: McpServer, bot: Bot) {
         const lightLevel = block.light;
 
         // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
-        const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout);
+        const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
         if (!result.success) {
           return createResponse(result.error || "Failed to mine block");
