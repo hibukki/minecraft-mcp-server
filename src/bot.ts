@@ -2392,7 +2392,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "mine-steps-up",
-    "Mine up multiple steps in a staircase pattern by clearing blocks above and jumping up",
+    "Mine up multiple steps. Good for going forwards-and-up.",
     {
       allowMiningOf: z
         .record(z.string(), z.array(z.string()))
