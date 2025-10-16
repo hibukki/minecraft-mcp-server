@@ -1926,7 +1926,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
             bot.setControlState(direction, false);
             const endPos = bot.entity.position.clone();
             const distance = startPos.distanceTo(endPos);
-            resolve(createResponse(`Moved ${direction} for ${duration}ms. Distance: ${distance.toFixed(2)} blocks. If stuck, consider show-adjacent-blocks`));
+            resolve(createResponse(`Moved ${direction} for ${duration}ms. Distance: ${distance.toFixed(2)} blocks. If stuck, consider show-adjacent-blocks, or a higher level tool like the pathfinder / stairs`));
           }, duration);
         } catch (error) {
           bot.setControlState(direction, false);
