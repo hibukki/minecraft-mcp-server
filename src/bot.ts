@@ -1004,7 +1004,14 @@ async function moveOneStep(
       bot, currentPos, direction, allowMiningOf, digTimeout
     );
 
-    if (!mineResult.success) {
+    if (mineResult.success) {
+      return {
+        blocksMined: mineResult.blocksMined,
+        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        pillaredUpBlocks: 0,
+        error: errorsFromPreviousSteps.join("; ")
+      }
+    } else {
       errorsFromPreviousSteps.push(`Mine: ${mineResult.error}`);
     }
   }
