@@ -1203,7 +1203,7 @@ async function mineUpOneStep(
   // Jump and move forward
   bot.setControlState('jump', true);
   bot.setControlState('forward', true);
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 500));
   bot.setControlState('jump', false);
   bot.setControlState('forward', false);
   await new Promise(r => setTimeout(r, 100));
