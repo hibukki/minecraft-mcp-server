@@ -647,24 +647,21 @@ async function waitToLandFromAir(bot: Bot): Promise<void> {
 
 // TODO: This should also return an error if it fails
 async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
+  const botFeetPos = bot.entity.position;
+  const blockWeAreStandingOn = bot.blockAt(botFeetPos.offset(0, -1, 0).floor());
+
   await jumpAndWaitToBeInAir(bot);
 
-  const currentPos = bot.entity.position;
-  const belowPos = currentPos.offset(0, -1, 0).floor();
-  const blockBelow = bot.blockAt(belowPos);
-
-  if (blockBelow && blockBelow.name === 'air') {
-    const refBlock = bot.blockAt(belowPos.offset(0, -1, 0));
-    if (refBlock && refBlock.name !== 'air') {
-      try {
-        await bot.placeBlock(refBlock, new Vec3(0, 1, 0));
-        await waitToLandFromAir(bot);
-        return true;
-      } catch (placeError) {
-        log('warn', `Failed to place pillar block: ${formatError(placeError)}`);
-        await waitToLandFromAir(bot);
-        return false;
-      }
+  // Place block AT our feet location (where we were standing), using the block below as reference
+  if (!isBlockEmpty(blockWeAreStandingOn)) {
+    try {
+      await bot.placeBlock(blockWeAreStandingOn!, new Vec3(0, 1, 0));
+      await waitToLandFromAir(bot);
+      return true;
+    } catch (placeError) {
+      log('warn', `Failed to place pillar block: ${formatError(placeError)}`);
+      await waitToLandFromAir(bot);
+      return false;
     }
   }
 
