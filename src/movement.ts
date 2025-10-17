@@ -56,6 +56,11 @@ export function getDistance(bot: Bot, target: Vec3): number {
   return bot.entity.position.distanceTo(target);
 }
 
+export function getBlockCenter(block: Block | null): Vec3 {
+  const blockCorner = block!.position;
+  return new Vec3(blockCorner.x + 0.5, blockCorner.y + 0.5, blockCorner.z + 0.5)
+}
+
 /**
  * Get the next axis-aligned direction to move toward target
  * Returns a vector where either x is 0 or z is 0 (never both non-zero)
