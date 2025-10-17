@@ -2741,9 +2741,12 @@ function registerBlockTools(server: McpServer, bot: Bot) {
           }
         }
 
-        return createResponse(
-          `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found`
-        );
+        const distanceToTarget = bot.entity.position.distanceTo(placePos);
+        let errorMessage = `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found`;
+        if (distanceToTarget < 1) {
+          errorMessage += `. Distance to target: ${distanceToTarget.toFixed(2)} blocks - the bot might be standing too close`;
+        }
+        return createResponse(errorMessage);
       } catch (error) {
         return createErrorResponse(error as Error);
       }
