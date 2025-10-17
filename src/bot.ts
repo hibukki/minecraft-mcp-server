@@ -714,149 +714,6 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "center-bot-in-current-block",
-    "If the bot is stuck even though it is trying to move in a direction that should be available: the bot might be at the edge of its block, and so centering might help",
-    {
-      executeStrafe: z
-        .boolean()
-        .optional()
-        .describe("Whether to actually execute the strafe (default: true)"),
-    },
-    async ({ executeStrafe = true }): Promise<McpResponse> => {
-      try {
-        const currentPos = bot.entity.position;
-        const yaw = bot.entity.yaw;
-
-        // Get facing direction
-        let facingDirection: AxisAlignedDirection;
-        let facingName: string;
-        try {
-          facingDirection = getBotAxisAlignedDirection(bot);
-          const normalizedYaw = ((yaw % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
-          const degrees = (normalizedYaw * 180) / Math.PI;
-          const rounded = Math.round(degrees / 90) * 90;
-          switch ((rounded + 360) % 360) {
-            case 0:   facingName = "South (+Z)"; break;
-            case 90:  facingName = "West (-X)"; break;
-            case 180: facingName = "North (-Z)"; break;
-            case 270: facingName = "East (+X)"; break;
-            default:  facingName = "Unknown"; break;
-          }
-        } catch (error) {
-          return createResponse(
-            `Bot is not axis-aligned.\n` +
-            `Position: ${formatBotPosition(currentPos)}\n` +
-            `Yaw: ${yaw.toFixed(2)} rad (${((yaw * 180) / Math.PI).toFixed(1)}°)\n` +
-            `Error: ${formatError(error)}`
-          );
-        }
-
-        // Determine which coordinate to check
-        let perpCoord: number;
-        let perpAxis: string;
-        if (facingDirection.x !== 0) {
-          perpCoord = currentPos.z;
-          perpAxis = "Z";
-        } else {
-          perpCoord = currentPos.x;
-          perpAxis = "X";
-        }
-
-        // Calculate alignment info
-        const normalizedCoord = ((perpCoord % 1.0) + 1.0) % 1.0;
-        const offsetFromCenter = normalizedCoord - 0.5;
-        const ALIGNMENT_THRESHOLD = 0.1;
-        const isAligned = Math.abs(offsetFromCenter) <= ALIGNMENT_THRESHOLD;
-
-        // Get strafe direction info
-        const strafeInfo = getStrafeDirectionAndAmount(bot);
-
-        let result = `Bot Alignment Debug Info:\n\n`;
-        result += `Position: ${formatBotPosition(currentPos)}\n`;
-        result += `Yaw: ${yaw.toFixed(2)} rad (${((yaw * 180) / Math.PI).toFixed(1)}°)\n`;
-        result += `Facing: ${facingName}\n\n`;
-        result += `Perpendicular axis to check: ${perpAxis}\n`;
-        result += `${perpAxis} coordinate: ${perpCoord.toFixed(3)}\n`;
-        result += `Normalized (0-1 range): ${normalizedCoord.toFixed(3)}\n`;
-        result += `Offset from center: ${offsetFromCenter.toFixed(3)} blocks\n`;
-        result += `Threshold: ±${ALIGNMENT_THRESHOLD} blocks\n\n`;
-
-        if (isAligned) {
-          result += `✓ Bot is already centered (within threshold)\n`;
-          result += `No strafe needed.`;
-        } else {
-          result += `✗ Bot needs centering\n`;
-          if (strafeInfo) {
-            result += `Strafe direction: ${strafeInfo.direction}\n`;
-            result += `Strafe amount: ${strafeInfo.amount.toFixed(3)} blocks\n`;
-            result += `Strafe duration: ${Math.round((strafeInfo.amount / 0.1) * 10)}ms\n\n`;
-
-            if (executeStrafe) {
-              const beforePos = bot.entity.position.clone();
-              await strafeToMiddle(bot);
-              const afterPos = bot.entity.position;
-
-              // Calculate actual movement
-              const moved = afterPos.distanceTo(beforePos);
-              const newOffset = facingDirection.x !== 0
-                ? (((afterPos.z % 1.0) + 1.0) % 1.0) - 0.5
-                : (((afterPos.x % 1.0) + 1.0) % 1.0) - 0.5;
-
-              result += `Strafe executed!\n`;
-              result += `Before: ${formatBotPosition(beforePos)}\n`;
-              result += `After: ${formatBotPosition(afterPos)}\n`;
-              result += `Moved: ${moved.toFixed(3)} blocks\n`;
-              result += `New offset from center: ${newOffset.toFixed(3)} blocks`;
-            } else {
-              result += `Strafe NOT executed (executeStrafe=false)`;
-            }
-          } else {
-            result += `Warning: getStrafeDirectionAndAmount returned null even though bot is not aligned!\n`;
-            result += `This might indicate a bug in the strafe logic.`;
-          }
-        }
-
-        return createResponse(result);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
-    }
-  );
-
-  server.tool(
-    "look-ahead-not-diagonally",
-    "Debug tool",
-    {
-      targetX: z.number().describe("Target X coordinate to determine direction"),
-      targetY: z.number().describe("Target Y coordinate to determine direction"),
-      targetZ: z.number().describe("Target Z coordinate to determine direction"),
-    },
-    async ({ targetX, targetY, targetZ }): Promise<McpResponse> => {
-      try {
-        const target = new Vec3(targetX, targetY, targetZ);
-        const currentPos = bot.entity.position;
-        const direction = getNextXZAlignedDirection(bot, target);
-        const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
-
-        const headInfo = blockAheadOfHead
-          ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
-          : 'air or null';
-        const feetInfo = blockAheadOfFeet
-          ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
-          : 'air or null';
-
-        return createResponse(
-          `Looking ahead toward target (${targetX}, ${targetY}, ${targetZ}):\n` +
-          `Block ahead of head: ${headInfo}\n` +
-          `Block ahead of feet: ${feetInfo}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
-    }
-  );
-
-  server.tool(
     "mine-forwards",
     "Mines blocks ahead and walks forward, repeating for the specified number of blocks to make progress underground",
     {
@@ -880,6 +737,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       const target = new Vec3(targetX, targetY, targetZ);
       const startPos = bot.entity.position.clone();
       let totalBlocksMined = 0;
+
+      await strafeToMiddleBothXZ(bot);
 
       try {
 
