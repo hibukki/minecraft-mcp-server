@@ -189,9 +189,7 @@ export async function walkForwardsIfPossible(
   const headClear = isBlockEmpty(blockAheadOfHead);
 
   if (feetClear && headClear) {
-    bot.setControlState('forward', true);
-    await new Promise(r => setTimeout(r, 200));
-    bot.setControlState('forward', false);
+    walkForwardsAtLeastOneBlock(bot, blockAheadOfFeet!.position)
     return true;
   }
 
@@ -201,14 +199,22 @@ export async function walkForwardsIfPossible(
 /**
  * Walk forward for at least 500ms to ensure the bot moves at least one block
  */
-export async function walkForwardsAtLeastOneBlock(
+export async function walkForwardsAtLeastOneBlockXZAligned(
   bot: Bot,
   direction: AxisAlignedDirection
 ): Promise<void> {
   // Look in the direction we're walking
   const currentPos = bot.entity.position;
   const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
-  await bot.lookAt(lookTarget, false);
+
+  return walkForwardsAtLeastOneBlock(bot, lookTarget)
+}
+
+export async function walkForwardsAtLeastOneBlock(
+  bot: Bot,
+  target: Vec3
+): Promise<void> {
+  await bot.lookAt(target, false);
 
   // Walk forward for 500ms
   bot.setControlState('forward', true);

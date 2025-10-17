@@ -31,6 +31,7 @@ import {
   getStrafeDirectionAndAmount,
   strafeToMiddle,
   strafeToMiddleBothXZ,
+  walkForwardsAtLeastOneBlockXZAligned,
 } from "./movement.js";
 
 // ========== Type Definitions ==========
@@ -1989,7 +1990,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           totalBlocksMined += result.blocksMined;
 
           // Walk forward
-          await walkForwardsAtLeastOneBlock(bot, direction);
+          await walkForwardsAtLeastOneBlockXZAligned(bot, direction);
         }
 
         const distTraveled = startPos.distanceTo(bot.entity.position);
