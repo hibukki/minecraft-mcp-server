@@ -60,7 +60,6 @@ interface FaceOption {
   vector: Vec3;
 }
 
-type Direction = "forward" | "back" | "left" | "right";
 type FaceDirection = "up" | "down" | "north" | "south" | "east" | "west";
 
 interface StoredMessage {
@@ -1586,39 +1585,97 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "move-in-direction",
-    "Move the bot in a specific direction for a duration. Good to move in flat ground with no obstacles",
+    "Move the bot toward a target block, automatically handling obstacles by walking and jumping",
     {
-      direction: z
-        .enum(["forward", "back", "left", "right"])
-        .describe("Direction to move"),
-      duration: z
-        .number()
-        .optional()
-        .describe("Duration in milliseconds (default: 1000)"),
+      targetX: z.number().describe("Target X coordinate"),
+      targetY: z.number().describe("Target Y coordinate"),
+      targetZ: z.number().describe("Target Z coordinate"),
     },
     async ({
-      direction,
-      duration = 1000,
-    }: {
-      direction: Direction;
-      duration?: number;
+      targetX,
+      targetY,
+      targetZ,
     }): Promise<McpResponse> => {
-      return new Promise((resolve) => {
-        try {
-          const startPos = bot.entity.position.clone();
-          bot.setControlState(direction, true);
+      try {
+        const target = new Vec3(targetX, targetY, targetZ);
+        const startPos = bot.entity.position.clone();
+        const initialDistance = startPos.distanceTo(target);
 
-          setTimeout(() => {
-            bot.setControlState(direction, false);
-            const endPos = bot.entity.position.clone();
-            const distance = startPos.distanceTo(endPos);
-            resolve(createResponse(`Moved ${direction} for ${duration}ms. Distance: ${distance.toFixed(2)} blocks. If stuck, consider show-adjacent-blocks, or a higher level tool like the pathfinder / stairs`));
-          }, duration);
-        } catch (error) {
-          bot.setControlState(direction, false);
-          resolve(createErrorResponse(error as Error));
+        // Look toward the target
+        const currentPos = bot.entity.position;
+        const direction = getNextDirection(bot, target);
+        const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
+        await bot.lookAt(lookTarget, false);
+
+        // Try to move toward target with obstacle handling
+        const MAX_ATTEMPTS = 20;
+        let attempts = 0;
+
+        while (attempts < MAX_ATTEMPTS) {
+          const currentPos = bot.entity.position;
+          const currentDistance = currentPos.distanceTo(target);
+
+          // Check if we've reached the target (within 1.5 blocks)
+          if (currentDistance <= 1.5) {
+            const distanceTraveled = initialDistance - currentDistance;
+            return createResponse(
+              `Reached target! Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+              `Final distance to target: ${currentDistance.toFixed(1)} blocks`
+            );
+          }
+
+          // Update direction toward target
+          const direction = getNextDirection(bot, target);
+
+          // Try walking first
+          const walked = await walkForwardsIfPossible(bot, currentPos, direction);
+          if (walked) {
+            attempts++;
+            continue;
+          }
+
+          // If walking failed, try jumping over obstacle
+          const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+          if (jumpResult.success) {
+            attempts++;
+            continue;
+          }
+
+          // Both failed - report current situation
+          const endPos = bot.entity.position;
+          const distanceTraveled = startPos.distanceTo(endPos);
+          const distanceRemaining = endPos.distanceTo(target);
+          const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
+
+          const headInfo = blockAheadOfHead
+            ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
+            : 'air or null';
+          const feetInfo = blockAheadOfFeet
+            ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
+            : 'air or null';
+
+          return createResponse(
+            `Stuck after ${attempts} steps. ` +
+            `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
+            `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
+            `Blocks ahead - Head: ${headInfo}, Feet: ${feetInfo}. ` +
+            `Walk error: path not clear. Jump error: ${jumpResult.error}`
+          );
         }
-      });
+
+        // Reached MAX_ATTEMPTS
+        const endPos = bot.entity.position;
+        const distanceTraveled = startPos.distanceTo(endPos);
+        const distanceRemaining = endPos.distanceTo(target);
+
+        return createResponse(
+          `Reached max attempts (${MAX_ATTEMPTS}). ` +
+          `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
+          `Remaining: ${distanceRemaining.toFixed(1)} blocks`
+        );
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
     }
   );
 
