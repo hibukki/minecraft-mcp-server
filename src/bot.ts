@@ -1623,13 +1623,10 @@ function registerPositionTools(server: McpServer, bot: Bot) {
         }
 
         const walked = await walkForwardsIfPossible(bot, currentPos, direction);
-        if (walked) {
-          attempts++;
-          continue;
-        }
 
         const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
-        if (jumpResult.success) {
+        
+        if (jumpResult.success || walked) {
           attempts++;
           continue;
         }
