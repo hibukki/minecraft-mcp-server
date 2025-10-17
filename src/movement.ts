@@ -60,7 +60,7 @@ export function getDistance(bot: Bot, target: Vec3): number {
  * Get the next axis-aligned direction to move toward target
  * Returns a vector where either x is 0 or z is 0 (never both non-zero)
  */
-export function getNextDirection(bot: Bot, target: Vec3): AxisAlignedDirection {
+export function getNextXZAlignedDirection(bot: Bot, target: Vec3): AxisAlignedDirection {
   const currentPos = bot.entity.position;
   const dx = target.x - currentPos.x;
   const dz = target.z - currentPos.z;

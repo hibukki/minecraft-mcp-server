@@ -21,7 +21,7 @@ import {
   isBlockEmpty,
   getBlocksAhead,
   getDistance,
-  getNextDirection,
+  getNextXZAlignedDirection,
   jumpAndWaitToBeInAir,
   waitToLandFromAir,
   jumpOverSmallObstacleIfPossible,
@@ -1438,7 +1438,7 @@ async function moveOneStep(
   }
 
   // 1. Get the next axis-aligned direction to move toward target
-  const direction = getNextDirection(bot, target);
+  const direction = getNextXZAlignedDirection(bot, target);
 
   // 2. Look in movement direction
   const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
@@ -1585,7 +1585,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
   server.tool(
     "move-in-direction",
-    "Move the bot toward a target block, automatically handling obstacles by walking and jumping",
+    "Move the bot toward a target block that is more or less the same height (Y) as the bot. Doesn't dig down (for a low Y target), doesn't build up (for a high Y target), so bad for those",
     {
       targetX: z.number().describe("Target X coordinate"),
       targetY: z.number().describe("Target Y coordinate"),
@@ -1607,7 +1607,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       while (attempts < MAX_ATTEMPTS) {
         // Look toward the target
         const currentPos = bot.entity.position;
-        const direction = getNextDirection(bot, target);
+        const direction = getNextXZAlignedDirection(bot, target);
         const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
         await bot.lookAt(lookTarget, false);
         
@@ -1922,7 +1922,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       try {
         const target = new Vec3(targetX, targetY, targetZ);
         const currentPos = bot.entity.position;
-        const direction = getNextDirection(bot, target);
+        const direction = getNextXZAlignedDirection(bot, target);
         const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
         const headInfo = blockAheadOfHead
@@ -1972,7 +1972,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
 
         for (let i = 0; i < numBlocksForwards; i++) {
           const currentPos = bot.entity.position;
-          const direction = getNextDirection(bot, target);
+          const direction = getNextXZAlignedDirection(bot, target);
 
           // Mine blocks ahead
           const result = await mineForwardsIfPossible(
@@ -2016,7 +2016,7 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       try {
         const target = new Vec3(targetX, targetY, targetZ);
         const currentPos = bot.entity.position;
-        const direction = getNextDirection(bot, target);
+        const direction = getNextXZAlignedDirection(bot, target);
 
         const result = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
 
@@ -2113,129 +2113,129 @@ function registerPositionTools(server: McpServer, bot: Bot) {
     }
   );
 
-  server.tool(
-    "deprecated-pathfind-and-move-or-dig-to",
-    "Move to a target position with auto-mining and optional pillar-up.",
-    {
-      x: z.number().describe("Target X coordinate"),
-      y: z.number().describe("Target Y coordinate"),
-      z: z.number().describe("Target Z coordinate"),
-      allowPillarUpWith: z
-        .array(z.string())
-        .optional()
-        .describe("Allow using these blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
-      allowMiningOf: z
-        .record(z.string(), z.array(z.string()))
-        .optional()
-        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
-      allowDigDown: z
-        .boolean()
-        .optional()
-        .default(true)
-        .describe("Allow digging down when stuck (ensures there's solid ground 2 blocks below before digging)"),
-      maxIterations: z
-        .number()
-        .optional()
-        .default(10)
-        .describe("Maximum number of movement iterations"),
-    },
-    async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, allowDigDown = true, maxIterations = 10 }): Promise<McpResponse> => {
-      const startPos = bot.entity.position.clone();
-      const startTime = Date.now();
-      const target = new Vec3(x, y, z);
-      const DIG_TIMEOUT_SECONDS = 3;
+  // server.tool(
+  //   "deprecated-pathfind-and-move-or-dig-to",
+  //   "Move to a target position with auto-mining and optional pillar-up.",
+  //   {
+  //     x: z.number().describe("Target X coordinate"),
+  //     y: z.number().describe("Target Y coordinate"),
+  //     z: z.number().describe("Target Z coordinate"),
+  //     allowPillarUpWith: z
+  //       .array(z.string())
+  //       .optional()
+  //       .describe("Allow using these blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
+  //     allowMiningOf: z
+  //       .record(z.string(), z.array(z.string()))
+  //       .optional()
+  //       .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+  //     allowDigDown: z
+  //       .boolean()
+  //       .optional()
+  //       .default(true)
+  //       .describe("Allow digging down when stuck (ensures there's solid ground 2 blocks below before digging)"),
+  //     maxIterations: z
+  //       .number()
+  //       .optional()
+  //       .default(10)
+  //       .describe("Maximum number of movement iterations"),
+  //   },
+  //   async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, allowDigDown = true, maxIterations = 10 }): Promise<McpResponse> => {
+  //     const startPos = bot.entity.position.clone();
+  //     const startTime = Date.now();
+  //     const target = new Vec3(x, y, z);
+  //     const DIG_TIMEOUT_SECONDS = 3;
 
-      try {
-        let totalBlocksMined = 0;
-        let totalPillaredBlocks = 0;
-        const visitedPositions = new Set<string>();
-        const stepLog: string[] = [];
+  //     try {
+  //       let totalBlocksMined = 0;
+  //       let totalPillaredBlocks = 0;
+  //       const visitedPositions = new Set<string>();
+  //       const stepLog: string[] = [];
 
-        for (let iteration = 0; iteration < maxIterations; iteration++) {
-          // Check if we've reached the target
-          const arrivalCheck = didArriveAtTarget(bot, target);
-          if (arrivalCheck.arrived) {
-            const totalDist = startPos.distanceTo(bot.entity.position);
-            const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-            return createResponse(
-              `Reached target (${x}, ${y}, ${z}) from ${formatBotPosition(startPos)}. ` +
-              `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.\n` +
-              `Steps: ${stepLog.join('; ')}`
-            );
-          }
+  //       for (let iteration = 0; iteration < maxIterations; iteration++) {
+  //         // Check if we've reached the target
+  //         const arrivalCheck = didArriveAtTarget(bot, target);
+  //         if (arrivalCheck.arrived) {
+  //           const totalDist = startPos.distanceTo(bot.entity.position);
+  //           const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+  //           return createResponse(
+  //             `Reached target (${x}, ${y}, ${z}) from ${formatBotPosition(startPos)}. ` +
+  //             `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.\n` +
+  //             `Steps: ${stepLog.join('; ')}`
+  //           );
+  //         }
 
-          const posBeforeStep = bot.entity.position.clone();
-          const stepResult = await moveOneStep(
-            bot, target,
-            allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS, allowDigDown
-          );
-          const posAfterStep = bot.entity.position.clone();
+  //         const posBeforeStep = bot.entity.position.clone();
+  //         const stepResult = await moveOneStep(
+  //           bot, target,
+  //           allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS, allowDigDown
+  //         );
+  //         const posAfterStep = bot.entity.position.clone();
 
-          // Log what happened in this step
-          const stepDesc = [];
-          if (stepResult.blocksMined > 0) stepDesc.push(`mined ${stepResult.blocksMined}`);
-          if (stepResult.pillaredUpBlocks > 0) stepDesc.push(`pillared ${stepResult.pillaredUpBlocks}`);
-          if (stepResult.movedBlocksCloser !== 0) stepDesc.push(`moved ${stepResult.movedBlocksCloser.toFixed(1)}b`);
-          if (stepResult.error) stepDesc.push(stepResult.error);
-          stepLog.push(`[${iteration+1}] ${formatBotPosition(posAfterStep)}: ${stepDesc.join(', ') || 'no action'}`);
+  //         // Log what happened in this step
+  //         const stepDesc = [];
+  //         if (stepResult.blocksMined > 0) stepDesc.push(`mined ${stepResult.blocksMined}`);
+  //         if (stepResult.pillaredUpBlocks > 0) stepDesc.push(`pillared ${stepResult.pillaredUpBlocks}`);
+  //         if (stepResult.movedBlocksCloser !== 0) stepDesc.push(`moved ${stepResult.movedBlocksCloser.toFixed(1)}b`);
+  //         if (stepResult.error) stepDesc.push(stepResult.error);
+  //         stepLog.push(`[${iteration+1}] ${formatBotPosition(posAfterStep)}: ${stepDesc.join(', ') || 'no action'}`);
 
-          totalBlocksMined += stepResult.blocksMined;
-          totalPillaredBlocks += stepResult.pillaredUpBlocks;
+  //         totalBlocksMined += stepResult.blocksMined;
+  //         totalPillaredBlocks += stepResult.pillaredUpBlocks;
 
-          // Check for circular movement
-          const currentPos = bot.entity.position;
-          const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
-          if (visitedPositions.has(posKey)) {
-            const distRemaining = currentPos.distanceTo(target);
-            const distTraveled = startPos.distanceTo(currentPos);
-            return createResponse(
-              `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-              `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-              `Steps: ${stepLog.join('; ')}\n` +
-              `Perhaps the pathfinder isn't working well for this situation (is it a reproducible bug?) and you should try a lower level tool.`
-            );
-          }
-          visitedPositions.add(posKey);
+  //         // Check for circular movement
+  //         const currentPos = bot.entity.position;
+  //         const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
+  //         if (visitedPositions.has(posKey)) {
+  //           const distRemaining = currentPos.distanceTo(target);
+  //           const distTraveled = startPos.distanceTo(currentPos);
+  //           return createResponse(
+  //             `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
+  //             `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+  //             `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+  //             `Steps: ${stepLog.join('; ')}\n` +
+  //             `Perhaps the pathfinder isn't working well for this situation (is it a reproducible bug?) and you should try a lower level tool.`
+  //           );
+  //         }
+  //         visitedPositions.add(posKey);
 
-          // Check if we made progress this iteration
-          const madeProgress = stepResult.blocksMined > 0 ||
-                              stepResult.movedBlocksCloser != 0 || // We might temporarily get further away, but at least we don't stay in place
-                              stepResult.pillaredUpBlocks > 0;
+  //         // Check if we made progress this iteration
+  //         const madeProgress = stepResult.blocksMined > 0 ||
+  //                             stepResult.movedBlocksCloser != 0 || // We might temporarily get further away, but at least we don't stay in place
+  //                             stepResult.pillaredUpBlocks > 0;
 
-          if (!madeProgress && iteration > 0) {
-            const distRemaining = bot.entity.position.distanceTo(target);
-            const distTraveled = startPos.distanceTo(bot.entity.position);
+  //         if (!madeProgress && iteration > 0) {
+  //           const distRemaining = bot.entity.position.distanceTo(target);
+  //           const distTraveled = startPos.distanceTo(bot.entity.position);
 
-            return createResponse(
-              `${stepResult.error || "Stuck at this iteration with no info from moveOneStep (probably a bug: info should normally be available)"}. ` +
-              `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
-              `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-              `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-              `Steps: ${stepLog.join('; ')}`
-            );
-          }
-        }
+  //           return createResponse(
+  //             `${stepResult.error || "Stuck at this iteration with no info from moveOneStep (probably a bug: info should normally be available)"}. ` +
+  //             `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
+  //             `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
+  //             `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
+  //             `Steps: ${stepLog.join('; ')}`
+  //           );
+  //         }
+  //       }
 
-        // Max iterations reached - calculate progress stats (reusing same calculation as above)
-        const distRemaining = bot.entity.position.distanceTo(target);
-        const distTraveled = startPos.distanceTo(bot.entity.position);
-        return createResponse(
-          `Reached iteration limit (${maxIterations} iterations). Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
-          `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
-          `Call move-to again to continue.\n` +
-          `Steps: ${stepLog.join('; ')}`
-        );
+  //       // Max iterations reached - calculate progress stats (reusing same calculation as above)
+  //       const distRemaining = bot.entity.position.distanceTo(target);
+  //       const distTraveled = startPos.distanceTo(bot.entity.position);
+  //       return createResponse(
+  //         `Reached iteration limit (${maxIterations} iterations). Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
+  //         `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
+  //         `Call move-to again to continue.\n` +
+  //         `Steps: ${stepLog.join('; ')}`
+  //       );
 
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      } finally {
-        // Always clean up control states
-        bot.setControlState('forward', false);
-        bot.setControlState('jump', false);
-      }
-    }
-  );
+  //     } catch (error) {
+  //       return createErrorResponse(error as Error);
+  //     } finally {
+  //       // Always clean up control states
+  //       bot.setControlState('forward', false);
+  //       bot.setControlState('jump', false);
+  //     }
+  //   }
+  // );
 }
 
 // ========== Inventory Management Tools ==========
