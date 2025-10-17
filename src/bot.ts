@@ -2907,16 +2907,24 @@ function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "find-block-by-type",
-    "Find the nearest block of a specific type",
+    "find-blocks-by-type",
+    "Find blocks of a specific type (sorted by distance, closest first)",
     {
       blockType: z.string().describe("Type of block to find"),
       maxDistance: z
         .number()
         .optional()
         .describe("Maximum search distance (default: 16)"),
+      maxResults: z
+        .number()
+        .optional()
+        .describe("Maximum number of blocks to return (default: 5)"),
     },
-    async ({ blockType, maxDistance = 16 }): Promise<McpResponse> => {
+    async ({
+      blockType,
+      maxDistance = 16,
+      maxResults = 5,
+    }): Promise<McpResponse> => {
       try {
         const mcData = minecraftData(bot.version);
         const blocksByName = mcData.blocksByName;
@@ -2927,19 +2935,24 @@ function registerBlockTools(server: McpServer, bot: Bot) {
 
         const blockId = blocksByName[blockType].id;
 
-        const block = bot.findBlock({
+        const positions = bot.findBlocks({
           matching: blockId,
           maxDistance: maxDistance,
+          count: maxResults,
         });
 
-        if (!block) {
+        if (positions.length === 0) {
           return createResponse(
             `No ${blockType} found within ${maxDistance} blocks`
           );
         }
 
+        const positionStrings = positions.map(
+          (pos) => `(${pos.x}, ${pos.y}, ${pos.z})`
+        );
+
         return createResponse(
-          `Found ${blockType} at position (${block.position.x}, ${block.position.y}, ${block.position.z})`
+          `Found ${positions.length} ${blockType} block(s):\n${positionStrings.join("\n")}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
