@@ -489,7 +489,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         bot.setControlState("jump", true);
         setTimeout(() => bot.setControlState("jump", false), 250);
 
-        return createResponse("Successfully jumped in place");
+        return createResponse("Jumped in place");
       } catch (error) {
         return createErrorResponse(error as Error);
       }
@@ -497,7 +497,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "move-in-direction",
+    "move-horizontally",
     "Move the bot toward a target block that is more or less the same height (Y) as the bot. Doesn't dig down (for a low Y target), doesn't build up (for a high Y target), so bad for those",
     {
       targetX: z.number().describe("Target X coordinate"),
@@ -580,7 +580,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "pillar-up",
+    "move-up-by-pillaring",
     "Build a pillar by jumping and placing blocks below. Good for trying to go way up.",
     {
       height: z.number().describe("Number of blocks to pillar up"),
@@ -714,7 +714,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "mine-forwards",
+    "move-forwards-by-mining",
     "Mines blocks ahead and walks forward, repeating for the specified number of blocks to make progress underground",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
