@@ -1669,14 +1669,15 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         }
 
         let output = `Found ${limitedItems.length} nearby items (of ${allItems.length} total):\n\n`;
+        output += `Entity/Block;Name;Count;Closest_Distance;Closest_location(x,y,z)\n`;
 
-        limitedItems.forEach((item, index) => {
+        limitedItems.forEach((item) => {
           const pos = item.position;
-          const marker = item.category === 'entity' ? '[ENTITY]' : '[BLOCK]';
-          output += `${index + 1}. ${marker} ${item.type} | count=${item.count} | closest_distance=${item.distance.toFixed(1)} | closest_xyz=${formatBlockPosition(pos)}\n`;
+          const typeMarker = item.category === 'entity' ? 'E' : 'B';
+          output += `${typeMarker};${item.type};${item.count};${item.distance.toFixed(1)};(${pos.x},${pos.y},${pos.z})\n`;
         });
 
-        output += `If you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
+        output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
 
         return createResponse(output.trim());
       } catch (error) {
