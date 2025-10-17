@@ -1010,7 +1010,7 @@ async function digDirectlyDownIfPossible(
       return {
         success: false,
         blocksMined: totalBlocksMined,
-        error: `Cannot dig down: block at ${formatBlockPosition(currentBotPos.offset(0, -2, 0))} is ${blockUnderUnderUs?.name || 'null'}, would fall into hole`
+        error: `Not digging for caution: block at ${formatBlockPosition(currentBotPos.offset(0, -2, 0))} (below what we are digging) is ${blockUnderUnderUs?.name || 'null'}, would fall into hole if we dug one down. Use dig-adjacent-block at your own risk`
       };
     }
 
