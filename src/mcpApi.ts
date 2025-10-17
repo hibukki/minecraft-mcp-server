@@ -10,7 +10,6 @@ import minecraftData from "minecraft-data";
 import yargs from "yargs";
 import type { Arguments } from "yargs";
 import { hideBin } from "yargs/helpers";
-import { appendFileSync } from "fs";
 import type { Block } from "prismarine-block";
 import type { Item } from "prismarine-item";
 import type { Entity } from "prismarine-entity";
@@ -26,6 +25,12 @@ import {
   jumpAndWaitToBeInAir,
   waitToLandFromAir,
   jumpOverSmallObstacleIfPossible,
+  walkForwardsIfPossible,
+  walkForwardsAtLeastOneBlock,
+  getBotAxisAlignedDirection,
+  getStrafeDirectionAndAmount,
+  strafeToMiddle,
+  strafeToMiddleBothXZ,
 } from "./movement.js";
 
 // ========== Type Definitions ==========
@@ -789,44 +794,6 @@ async function tryPillaringUpIfSensible(
 }
 
 // Helper functions for move-to horizontal movement
-async function walkForwardsIfPossible(
-  bot: Bot,
-  currentPos: Vec3,
-  direction: AxisAlignedDirection
-): Promise<boolean> {
-  console.log("Running walkForwardsIfPossible")
-  const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
-
-  const feetClear = isBlockEmpty(blockAheadOfFeet);
-  const headClear = isBlockEmpty(blockAheadOfHead);
-
-  if (feetClear && headClear) {
-    bot.setControlState('forward', true);
-    await new Promise(r => setTimeout(r, 200));
-    bot.setControlState('forward', false);
-    return true;
-  }
-
-  return false;
-}
-
-/**
- * Walk forward for at least 500ms to ensure the bot moves at least one block
- */
-async function walkForwardsAtLeastOneBlock(
-  bot: Bot,
-  direction: AxisAlignedDirection
-): Promise<void> {
-  // Look in the direction we're walking
-  const currentPos = bot.entity.position;
-  const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
-  await bot.lookAt(lookTarget, false);
-
-  // Walk forward for 500ms
-  bot.setControlState('forward', true);
-  await new Promise(r => setTimeout(r, 500));
-  bot.setControlState('forward', false);
-}
 
 
 async function mineForwardsIfPossible(
@@ -1234,194 +1201,6 @@ async function mineStepsUp(
 }
 
 
-/**
- * Get the axis-aligned direction the bot is currently facing
- * Throws if bot is not facing a cardinal direction
- */
-function getBotAxisAlignedDirection(bot: Bot): AxisAlignedDirection {
-  const yaw = bot.entity.yaw;
-
-  // Normalize yaw to 0-2π range
-  const normalizedYaw = ((yaw % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI);
-
-  // Convert to degrees for easier reasoning
-  const degrees = (normalizedYaw * 180) / Math.PI;
-
-  // Check which cardinal direction (exact 90 degree increments)
-  const rounded = Math.round(degrees / 90) * 90;
-
-  if (Math.abs(degrees - rounded) > 1) {
-    // Not aligned to cardinal direction
-    throw new Error(
-      `Bot is not axis-aligned. Yaw: ${yaw.toFixed(2)} rad (${degrees.toFixed(1)}°). ` +
-      `Expected exactly: 0°, 90°, 180°, or 270°`
-    );
-  }
-
-  // Return direction based on rounded degrees
-  switch ((rounded + 360) % 360) {
-    case 0:   // South (+Z)
-      return { x: 0, y: 0, z: 1 };
-    case 90:  // West (-X)
-      return { x: -1, y: 0, z: 0 };
-    case 180: // North (-Z)
-      return { x: 0, y: 0, z: -1 };
-    case 270: // East (+X)
-      return { x: 1, y: 0, z: 0 };
-    default:
-      throw new Error(`Unexpected rounded degrees: ${rounded}`);
-  }
-}
-
-/**
- * Calculate strafe direction and amount needed to center the bot
- * Uses bot's yaw to determine which axis to align on, and bot's position for the amount
- * Returns null if already centered enough
- */
-function getStrafeDirectionAndAmount(
-  bot: Bot
-): { direction: 'left' | 'right'; amount: number } | null {
-  const currentPos = bot.entity.position;
-  const facingDirection = getBotAxisAlignedDirection(bot);
-
-  // Determine which coordinate to check based on facing direction
-  // If facing along X-axis, need to center Z. If facing along Z-axis, need to center X.
-  let perpCoord: number;
-  if (facingDirection.x !== 0) {
-    // Facing east or west (along X), check Z alignment
-    perpCoord = currentPos.z;
-  } else {
-    // Facing north or south (along Z), check X alignment
-    perpCoord = currentPos.x;
-  }
-
-  // Calculate offset from block center (0.5 is perfectly centered)
-  // Use ((x % 1) + 1) % 1 to normalize to 0-1 range (handles negative coords)
-  // e.g., if perpCoord is 10.9, then ((10.9 % 1) + 1) % 1 = 0.9, and 0.9 - 0.5 = 0.4 (too far positive)
-  // e.g., if perpCoord is 10.1, then ((10.1 % 1) + 1) % 1 = 0.1, and 0.1 - 0.5 = -0.4 (too far negative)
-  // e.g., if perpCoord is -11.7, then ((-11.7 % 1) + 1) % 1 = (-0.7 + 1) % 1 = 0.3, and 0.3 - 0.5 = -0.2
-  const normalizedCoord = ((perpCoord % 1.0) + 1.0) % 1.0; // Normalize to 0-1 range
-  const offsetFromCenter = normalizedCoord - 0.5; // Range: -0.5 to +0.5
-
-  // Threshold: if we're within 0.1 blocks of center, no strafe needed
-  const ALIGNMENT_THRESHOLD = 0.1;
-  if (Math.abs(offsetFromCenter) <= ALIGNMENT_THRESHOLD) {
-    return null;
-  }
-
-  // Determine strafe direction based on facing direction and position offset
-  let strafeDirection: 'left' | 'right';
-
-  // offsetFromCenter < 0 means we need to increase the perpendicular coordinate
-  // offsetFromCenter > 0 means we need to decrease the perpendicular coordinate
-  if (facingDirection.x > 0) {      // Facing east (+X), perpCoord is Z
-    // Increase Z (+Z) = strafe right, Decrease Z (-Z) = strafe left
-    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
-  } else if (facingDirection.x < 0) { // Facing west (-X), perpCoord is Z
-    // Increase Z (+Z) = strafe left, Decrease Z (-Z) = strafe right
-    strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
-  } else if (facingDirection.z > 0) { // Facing south (+Z), perpCoord is X
-    // Increase X (+X) = strafe right, Decrease X (-X) = strafe left
-    strafeDirection = offsetFromCenter > 0 ? 'left' : 'right';
-  } else {                            // Facing north (-Z), perpCoord is X
-    // Increase X (+X) = strafe left, Decrease X (-X) = strafe right
-    strafeDirection = offsetFromCenter > 0 ? 'right' : 'left';
-  }
-
-  return {
-    direction: strafeDirection,
-    amount: Math.abs(offsetFromCenter)
-  };
-}
-
-/**
- * Strafe the bot toward the center of the block perpendicular to facing direction
- *
- * Movement observations (tested while facing south, axis-aligned):
- * - 10ms: 0 blocks
- * - 20ms: 0 blocks
- * - 25ms: 0 blocks
- * - 30ms: 0.2 blocks
- * - 40ms: 0.4 blocks
- * - 50ms: 0.2 blocks (2 attempts)
- * - 60ms: 0.2 blocks
- * - 75ms: 0.4 blocks
- * - 100ms: 0.4 blocks
- * - 1000ms: 0.4 blocks (movement caps at 0.4 blocks per control state)
- *
- * Strategy: Use 50ms strafes (moves 0.2 blocks) in a loop until centered within 0.2 blocks.
- * This avoids overshooting and hitting the opposite wall.
- */
-async function strafeToMiddle(bot: Bot): Promise<void> {
-  const MAX_ATTEMPTS = 3;
-
-  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-    const strafeInfo = getStrafeDirectionAndAmount(bot);
-
-    if (!strafeInfo) {
-      // Already centered enough
-      return;
-    }
-
-    const { direction, amount } = strafeInfo;
-    const posBefore = bot.entity.position.clone();
-
-    // Use 50ms which moves ~0.2 blocks
-    const strafeDuration = 50;
-
-    bot.setControlState(direction, true);
-    await new Promise(r => setTimeout(r, strafeDuration));
-    bot.setControlState(direction, false);
-
-    const posAfter = bot.entity.position.clone();
-    const actualMovement = posBefore.distanceTo(posAfter);
-
-    // Check final position
-    const afterStrafe = getStrafeDirectionAndAmount(bot);
-    const finalOffset = afterStrafe ? afterStrafe.amount : 0;
-
-    const strafeDataMsg =
-      `Strafe attempt ${attempt + 1}: dir=${direction}, before=${amount.toFixed(3)}b from center, ` +
-      `duration=${strafeDuration}ms, actual_moved=${actualMovement.toFixed(3)}b, ` +
-      `after=${Math.abs(finalOffset).toFixed(3)}b from center, ` +
-      `pos_before=(${posBefore.x.toFixed(2)},${posBefore.z.toFixed(2)}), ` +
-      `pos_after=(${posAfter.x.toFixed(2)},${posAfter.z.toFixed(2)})`;
-
-    console.log(strafeDataMsg);
-
-    // If we're now centered (within 0.2 blocks), we're done
-    if (!afterStrafe || Math.abs(afterStrafe.amount) <= 0.2) {
-      return;
-    }
-  }
-
-  // After MAX_ATTEMPTS, check if we're close enough
-  const finalCheck = getStrafeDirectionAndAmount(bot);
-  if (finalCheck && Math.abs(finalCheck.amount) > 0.2) {
-    const errorMsg = `Failed to center after ${MAX_ATTEMPTS} attempts: still ${finalCheck.amount.toFixed(2)}b from center`;
-    appendFileSync('strafe_log.txt', errorMsg + '\n');
-    throw new Error(errorMsg);
-  }
-}
-
-/**
- * Center the bot in both X and Z axes by rotating to each axis and strafing
- */
-async function strafeToMiddleBothXZ(bot: Bot): Promise<void> {
-  // Save original yaw
-  const originalYaw = bot.entity.yaw;
-
-  // Center in X direction (face north or south)
-  await bot.look(0, 0, false); // Face south (0 yaw = south in Minecraft)
-  await strafeToMiddle(bot);
-
-  // Center in Z direction (face east or west)
-  await bot.look(Math.PI / 2, 0, false); // Face west (90 degrees)
-  await strafeToMiddle(bot);
-
-  // Restore original yaw
-  await bot.look(originalYaw, 0, false);
-}
 
 /**
  * Get the bot's position information
