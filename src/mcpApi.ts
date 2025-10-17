@@ -1596,86 +1596,83 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       targetY,
       targetZ,
     }): Promise<McpResponse> => {
-      try {
-        const target = new Vec3(targetX, targetY, targetZ);
-        const startPos = bot.entity.position.clone();
-        const initialDistance = startPos.distanceTo(target);
+      const target = new Vec3(targetX, targetY, targetZ);
+      const startPos = bot.entity.position.clone();
+      const initialDistance = startPos.distanceTo(target);
 
-        // Look toward the target
+      // Look toward the target
+      const currentPos = bot.entity.position;
+      const direction = getNextDirection(bot, target);
+      const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
+      await bot.lookAt(lookTarget, false);
+
+      // Try to move toward target with obstacle handling
+      const MAX_ATTEMPTS = 20;
+      let attempts = 0;
+
+      while (attempts < MAX_ATTEMPTS) {
         const currentPos = bot.entity.position;
-        const direction = getNextDirection(bot, target);
-        const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
-        await bot.lookAt(lookTarget, false);
+        const currentDistance = currentPos.distanceTo(target);
 
-        // Try to move toward target with obstacle handling
-        const MAX_ATTEMPTS = 20;
-        let attempts = 0;
-
-        while (attempts < MAX_ATTEMPTS) {
-          const currentPos = bot.entity.position;
-          const currentDistance = currentPos.distanceTo(target);
-
-          // Check if we've reached the target (within 1.5 blocks)
-          if (currentDistance <= 1.5) {
-            const distanceTraveled = initialDistance - currentDistance;
-            return createResponse(
-              `Reached target! Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
-              `Final distance to target: ${currentDistance.toFixed(1)} blocks`
-            );
-          }
-
-          // Update direction toward target
-          const direction = getNextDirection(bot, target);
-
-          // Try walking first
-          const walked = await walkForwardsIfPossible(bot, currentPos, direction);
-          if (walked) {
-            attempts++;
-            continue;
-          }
-
-          // If walking failed, try jumping over obstacle
-          const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
-          if (jumpResult.success) {
-            attempts++;
-            continue;
-          }
-
-          // Both failed - report current situation
-          const endPos = bot.entity.position;
-          const distanceTraveled = startPos.distanceTo(endPos);
-          const distanceRemaining = endPos.distanceTo(target);
-          const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
-
-          const headInfo = blockAheadOfHead
-            ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
-            : 'air or null';
-          const feetInfo = blockAheadOfFeet
-            ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
-            : 'air or null';
-
+        // Check if we've reached the target (within 1.5 blocks)
+        if (currentDistance <= 1.5) {
+          const distanceTraveled = initialDistance - currentDistance;
           return createResponse(
-            `Stuck after ${attempts} steps. ` +
-            `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
-            `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
-            `Blocks ahead - Head: ${headInfo}, Feet: ${feetInfo}. ` +
-            `Walk error: path not clear. Jump error: ${jumpResult.error}`
+            `Reached target! Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            `Final distance to target: ${currentDistance.toFixed(1)} blocks`
           );
         }
 
-        // Reached MAX_ATTEMPTS
+        // Update direction toward target
+        const direction = getNextDirection(bot, target);
+
+        // Try walking first
+        const walked = await walkForwardsIfPossible(bot, currentPos, direction);
+        if (walked) {
+          attempts++;
+          continue;
+        }
+
+        // If walking failed, try jumping over obstacle
+        const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+        if (jumpResult.success) {
+          attempts++;
+          continue;
+        }
+
+        // Both failed - report current situation
         const endPos = bot.entity.position;
         const distanceTraveled = startPos.distanceTo(endPos);
         const distanceRemaining = endPos.distanceTo(target);
+        const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
+
+        const headInfo = blockAheadOfHead
+          ? `${blockAheadOfHead.name} at ${formatBlockPosition(blockAheadOfHead.position)}`
+          : 'air or null';
+        const feetInfo = blockAheadOfFeet
+          ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
+          : 'air or null';
 
         return createResponse(
-          `Reached max attempts (${MAX_ATTEMPTS}). ` +
+          `Stuck after ${attempts} steps. ` +
           `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
-          `Remaining: ${distanceRemaining.toFixed(1)} blocks`
+          `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
+          `Blocks ahead - Head: ${headInfo}, Feet: ${feetInfo}. ` +
+          `Walk error: path not clear. Jump error: ${jumpResult.error}`
         );
-      } catch (error) {
-        return createErrorResponse(error as Error);
       }
+
+      // Reached MAX_ATTEMPTS
+      const endPos = bot.entity.position;
+      const distanceTraveled = startPos.distanceTo(endPos);
+      const distanceRemaining = endPos.distanceTo(target);
+
+      return createResponse(
+        `Reached max attempts (${MAX_ATTEMPTS}). ` +
+        `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
+        `Remaining: ${distanceRemaining.toFixed(1)} blocks`
+      );
+    
     }
   );
 
