@@ -1419,12 +1419,10 @@ export async function tryMiningOneBlock(
 
   // If no tool configured for this block and we have a non-empty mapping, it's an error
   if (!tool && Object.keys(allowedMiningToolsToMinedBlocks).length > 0) {
-    const heldItem = bot.heldItem;
-    const toolInfo = heldItem ? heldItem.name : "nothing (empty hand)";
     return {
       success: false,
       blocksMined: 0,
-      error: `Block ${block.name} at ${formatBlockPosition(blockPos)} is not in allowedMiningToolsToMinedBlocks. Holding: ${toolInfo}. Distance: ${distance.toFixed(1)} blocks (is that good?). Or try a longer timeout (was ${digTimeout})`
+      error: `Block ${block.name} at ${formatBlockPosition(blockPos)} missing from allowedMiningToolsToMinedBlocks input parameter, add it if you want to mine it.`
     };
   }
 
