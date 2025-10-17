@@ -1600,18 +1600,17 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       const startPos = bot.entity.position.clone();
       const initialDistance = startPos.distanceTo(target);
 
-      // Look toward the target
-      const currentPos = bot.entity.position;
-      const direction = getNextDirection(bot, target);
-      const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
-      await bot.lookAt(lookTarget, false);
-
       // Try to move toward target with obstacle handling
       const MAX_ATTEMPTS = 20;
       let attempts = 0;
 
       while (attempts < MAX_ATTEMPTS) {
+        // Look toward the target
         const currentPos = bot.entity.position;
+        const direction = getNextDirection(bot, target);
+        const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
+        await bot.lookAt(lookTarget, false);
+        
         const currentDistance = currentPos.distanceTo(target);
 
         // Check if we've reached the target (within 1.5 blocks)
@@ -1623,24 +1622,20 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           );
         }
 
-        // Update direction toward target
-        const direction = getNextDirection(bot, target);
-
-        // Try walking first
         const walked = await walkForwardsIfPossible(bot, currentPos, direction);
         if (walked) {
           attempts++;
           continue;
         }
 
-        // If walking failed, try jumping over obstacle
         const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
         if (jumpResult.success) {
           attempts++;
           continue;
         }
 
-        // Both failed - report current situation
+        // Failed to make progress
+
         const endPos = bot.entity.position;
         const distanceTraveled = startPos.distanceTo(endPos);
         const distanceRemaining = endPos.distanceTo(target);
@@ -1657,8 +1652,8 @@ function registerPositionTools(server: McpServer, bot: Bot) {
           `Stuck after ${attempts} steps. ` +
           `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
           `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
-          `Blocks ahead - Head: ${headInfo}, Feet: ${feetInfo}. ` +
-          `Walk error: path not clear. Jump error: ${jumpResult.error}`
+          `Block ahead of bot's head: ${headInfo}, ahead of bot's feet: ${feetInfo}. ` +
+          `Tried jumping and got: ${jumpResult.error}`
         );
       }
 
@@ -1668,11 +1663,9 @@ function registerPositionTools(server: McpServer, bot: Bot) {
       const distanceRemaining = endPos.distanceTo(target);
 
       return createResponse(
-        `Reached max attempts (${MAX_ATTEMPTS}). ` +
-        `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
+        `Made progress (${distanceTraveled.toFixed(1)} blocks), call again to continue.` +
         `Remaining: ${distanceRemaining.toFixed(1)} blocks`
       );
-    
     }
   );
 
