@@ -523,15 +523,18 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const direction = getNextXZAlignedDirection(bot, target);
         const lookTarget = currentPos.offset(direction.x * 5, 0, direction.z * 5);
         await bot.lookAt(lookTarget, false);
-        
-        const currentDistance = currentPos.distanceTo(target);
 
-        // Check if we've reached the target (within 1.5 blocks)
-        if (currentDistance <= 1.5) {
+        const currentDistance = currentPos.distanceTo(target);
+        const horizontalDistance = Math.sqrt(
+          Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
+        );
+
+        // Check if we've reached the target (within 1.5 blocks horizontally)
+        if (horizontalDistance <= 1.5) {
           const distanceTraveled = initialDistance - currentDistance;
           return createResponse(
-            `Reached target! Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
-            `Final distance to target: ${currentDistance.toFixed(1)} blocks`
+            `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.`
           );
         }
 
