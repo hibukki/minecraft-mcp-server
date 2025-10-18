@@ -773,7 +773,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
         const distTraveled = startPos.distanceTo(bot.entity.position);
         return createResponse(
-          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward${getOptionalDurabilityFyi(bot)}`
+          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward${getOptionalNewsFyi(bot)}`
         );
       } catch (error) {
         const distTraveled = startPos.distanceTo(bot.entity.position);
@@ -842,7 +842,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         } else {
           const finalPos = bot.entity.position;
           return createResponse(
-            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalDurabilityFyi(bot)}`
+            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalNewsFyi(bot)}`
           );
         }
       } catch (error) {
@@ -883,7 +883,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         } else {
           const finalPos = bot.entity.position;
           return createResponse(
-            `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalDurabilityFyi(bot)}`
+            `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalNewsFyi(bot)}`
           );
         }
       } catch (error) {
@@ -1144,12 +1144,55 @@ export function getEquippedItemDurability(bot: Bot): { remaining: number; max: n
   };
 }
 
-export function getOptionalDurabilityFyi(bot: Bot): string {
+// Track previous state for each bot to detect changes
+interface BotState {
+  lastOxygen?: number;
+  lastHealth?: number;
+  lastDurability?: number;
+}
+
+const botStateMap = new WeakMap<Bot, BotState>();
+
+function getBotState(bot: Bot): BotState {
+  let state = botStateMap.get(bot);
+  if (!state) {
+    state = {};
+    botStateMap.set(bot, state);
+  }
+  return state;
+}
+
+export function getOptionalNewsFyi(bot: Bot): string {
+  const state = getBotState(bot);
+  const updates: string[] = [];
+
+  const currentOxygen = bot.oxygenLevel;
+  if (state.lastOxygen !== undefined && currentOxygen < state.lastOxygen) {
+    updates.push(`Oxygen ${currentOxygen}/20`);
+  }
+  state.lastOxygen = currentOxygen;
+
+  const currentHealth = bot.health;
+  if (state.lastHealth !== undefined && currentHealth < state.lastHealth) {
+    updates.push(`Health ${currentHealth.toFixed(1)}/20`);
+  }
+  state.lastHealth = currentHealth;
+
   const durability = getEquippedItemDurability(bot);
-  if (!durability) {
+  if (durability) {
+    if (state.lastDurability !== undefined && durability.remaining < state.lastDurability) {
+      updates.push(`Equipped item durability ${durability.remaining}/${durability.max}`);
+    }
+    state.lastDurability = durability.remaining;
+  } else {
+    state.lastDurability = undefined;
+  }
+
+  if (updates.length === 0) {
     return '';
   }
-  return ` (equipped item durability: ${durability.remaining}/${durability.max})`;
+
+  return ` (updates: ${updates.join(', ')})`;
 }
 
 export function registerBlockTools(server: McpServer, bot: Bot) {
@@ -1291,7 +1334,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         if (lightLevel !== undefined && lightLevel < 8) {
           response += ` (fyi: block lighting was ${lightLevel}/15)`;
         }
-        response += getOptionalDurabilityFyi(bot);
+        response += getOptionalNewsFyi(bot);
 
         return createResponse(response);
       } catch (error) {
