@@ -102,6 +102,44 @@ Once connected to a Minecraft server, Claude can use these commands:
 ### Game State
 - `detect-gamemode` - Detect the gamemode on game
 
+## Viewing Logs
+
+The bot writes detailed logs to `logs/minecraft.log` in JSON format. This includes bot state changes, game events, and debug information.
+
+### View all logs
+```bash
+cat logs/minecraft.log
+```
+
+### Filter by log level
+```bash
+# View only errors
+grep '"level":"error"' logs/minecraft.log
+
+# View warnings (including bot state changes like oxygen/health drops)
+grep '"level":"warn"' logs/minecraft.log
+
+# View info messages
+grep '"level":"info"' logs/minecraft.log
+```
+
+### Filter by event type (using jq)
+```bash
+# Install jq if needed: brew install jq (macOS) or apt-get install jq (Linux)
+
+# View game events (chat, deaths, spawns)
+jq 'select(.type=="game_event")' logs/minecraft.log
+
+# View bot state changes (oxygen, health, durability)
+jq 'select(.type=="bot_state")' logs/minecraft.log
+
+# View tool calls
+jq 'select(.type=="tool_call")' logs/minecraft.log
+
+# View only errors with full details
+jq 'select(.level=="error")' logs/minecraft.log
+```
+
 ## Development Setup
 
 To clone and develop this project locally:

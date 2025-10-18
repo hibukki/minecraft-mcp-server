@@ -35,6 +35,7 @@ import {
   getBotPosition,
 } from "./movement.js";
 import { formatError, log } from "./bot_log.js";
+import { logToolCall, logBotState, logGameEvent } from "./logger.js";
 
 // ========== Type Definitions ==========
 
@@ -121,6 +122,21 @@ export function createErrorResponse(error: Error | string): McpResponse {
   };
 }
 
+// Wrapper to log tool calls
+export function withToolLogging<T extends Record<string, unknown>>(
+  toolName: string,
+  handler: (params: T) => Promise<McpResponse>
+): (params: T) => Promise<McpResponse> {
+  return async (params: T): Promise<McpResponse> => {
+    logToolCall(toolName, params);
+    const result = await handler(params);
+    if (!result.isError) {
+      logToolCall(toolName, params, result);
+    }
+    return result;
+  };
+}
+
 
 // ========== Message Storage ==========
 
@@ -170,21 +186,34 @@ export function setupBot(argv: Arguments): Bot {
       "info",
       `Server started and connected successfully. Bot: ${argv.username} on ${argv.host}:${argv.port}`
     );
+    logGameEvent("spawn", { username: argv.username, host: argv.host, port: argv.port });
   });
 
   // Register common event handlers
   bot.on("chat", (username, message) => {
     if (username === bot.username) return;
     messageStore.addMessage(username, message);
+    logGameEvent("chat", { username, message });
   });
 
   bot.on("kicked", (reason) => {
     log("error", `Bot was kicked: ${formatError(reason)}`);
+    logGameEvent("kicked", { reason: formatError(reason) });
     bot.quit();
   });
 
   bot.on("error", (err) => {
     log("error", `Bot error: ${formatError(err)}`);
+  });
+
+  bot.on("death", () => {
+    const pos = bot.entity.position;
+    logGameEvent("death", { position: { x: pos.x, y: pos.y, z: pos.z } });
+  });
+
+  bot.on("respawn", () => {
+    const pos = bot.entity.position;
+    logGameEvent("respawn", { position: { x: pos.x, y: pos.y, z: pos.z } });
   });
 
   return bot;
@@ -232,7 +261,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         .union([z.boolean(), z.string().transform(val => val === 'true')])
         .describe("Whether to use a crafting table for this recipe (required for most tools and complex items)"),
     },
-    async ({ itemName, count = 1, useCraftingTable }): Promise<McpResponse> => {
+    withToolLogging("craft-item", async ({ itemName, count = 1, useCraftingTable }): Promise<McpResponse> => {
       try {
         const mcData = minecraftData(bot.version);
         const itemsByName = mcData.itemsByName;
@@ -280,7 +309,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
       } catch (error) {
         return createErrorResponse(error as Error);
       }
-    }
+    })
   );
 }
 
@@ -1192,7 +1221,9 @@ export function getOptionalNewsFyi(bot: Bot): string {
     return '';
   }
 
-  return ` (updates: ${updates.join(', ')})`;
+  const updateStr = updates.join(', ');
+  logBotState(updateStr);
+  return ` (updates: ${updateStr})`;
 }
 
 export function registerBlockTools(server: McpServer, bot: Bot) {

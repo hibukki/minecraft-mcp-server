@@ -3,6 +3,7 @@ import { Vec3 } from "vec3";
 import type { Block } from "prismarine-block";
 import { appendFileSync } from "fs";
 import { formatError } from "./bot_log.js";
+import logger from "./logger.js";
 
 type MiningResult =
   | { success: true; blocksMined: number }
@@ -212,7 +213,7 @@ export async function walkForwardsIfPossible(
   currentPos: Vec3,
   direction: AxisAlignedDirection
 ): Promise<boolean> {
-  console.log("Running walkForwardsIfPossible")
+  logger.debug("Running walkForwardsIfPossible")
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
 
   const feetClear = isBlockEmpty(blockAheadOfFeet);
@@ -391,7 +392,7 @@ export async function strafeToMiddle(bot: Bot): Promise<void> {
       `pos_before=(${posBefore.x.toFixed(2)},${posBefore.z.toFixed(2)}), ` +
       `pos_after=(${posAfter.x.toFixed(2)},${posAfter.z.toFixed(2)})`;
 
-    console.log(strafeDataMsg);
+    logger.debug(strafeDataMsg);
 
     // If we're now centered (within 0.2 blocks), we're done
     if (!afterStrafe || Math.abs(afterStrafe.amount) <= 0.2) {
@@ -729,7 +730,7 @@ export async function pillarUpOneBlock(bot: Bot): Promise<boolean> {
       await waitToLandFromAir(bot);
       return true;
     } catch (placeError) {
-      console.log('warn', `Failed to place pillar block: ${formatError(placeError)}`);
+      logger.warn(`Failed to place pillar block: ${formatError(placeError)}`);
       await waitToLandFromAir(bot);
       return false;
     }
@@ -1147,7 +1148,7 @@ export async function moveOneStep(
   pillaredUpBlocks: number;
   error?: string;
 }> {
-  console.log("Running moveOneStep")
+  logger.debug("Running moveOneStep")
   const currentPos = bot.entity.position;
   const initialDistance = getDistance(bot, target);
 

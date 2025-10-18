@@ -1,11 +1,10 @@
+import logger from './logger.js';
 
 type LogLevel = "info" | "warn" | "error";
 
 export function log(level: LogLevel, message: string) {
-  const timestamp = new Date().toISOString();
-  process.stderr.write(`${timestamp} [minecraft] [${level}] ${message}\n`);
+  logger[level](message);
 }
-
 
 export function formatError(error: unknown): string {
   if (error instanceof Error) {
