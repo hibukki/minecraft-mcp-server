@@ -56,6 +56,10 @@ interface InventoryItem {
   name: string;
   count: number;
   slot: number;
+  durability?: {
+    remaining: number;
+    max: number;
+  };
 }
 
 interface FaceOption {
@@ -1023,11 +1027,22 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
     async (): Promise<McpResponse> => {
       try {
         const items = bot.inventory.items();
-        const itemList: InventoryItem[] = items.map((item) => ({
-          name: item.name,
-          count: item.count,
-          slot: item.slot,
-        }));
+        const itemList: InventoryItem[] = items.map((item) => {
+          const inventoryItem: InventoryItem = {
+            name: item.name,
+            count: item.count,
+            slot: item.slot,
+          };
+
+          if (item.maxDurability != null && item.durabilityUsed != null) {
+            inventoryItem.durability = {
+              remaining: item.maxDurability - item.durabilityUsed,
+              max: item.maxDurability,
+            };
+          }
+
+          return inventoryItem;
+        });
 
         if (items.length === 0) {
           return createResponse("Inventory is empty");
@@ -1035,7 +1050,11 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
 
         let inventoryText = `Found ${items.length} items in inventory:\n\n`;
         itemList.forEach((item) => {
-          inventoryText += `- ${item.name} (x${item.count}) in slot ${item.slot}\n`;
+          let itemText = `- ${item.name} (x${item.count}) in slot ${item.slot}`;
+          if (item.durability) {
+            itemText += ` [durability: ${item.durability.remaining}/${item.durability.max}]`;
+          }
+          inventoryText += itemText + '\n';
         });
 
         return createResponse(inventoryText);
