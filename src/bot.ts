@@ -1133,6 +1133,17 @@ export function getLightLevel(light: number | undefined): string {
   return `light: ${light}/15`;
 }
 
+export function getEquippedItemDurability(bot: Bot): { remaining: number; max: number } | null {
+  const heldItem = bot.heldItem;
+  if (!heldItem || heldItem.maxDurability == null || heldItem.durabilityUsed == null) {
+    return null;
+  }
+  return {
+    remaining: heldItem.maxDurability - heldItem.durabilityUsed,
+    max: heldItem.maxDurability,
+  };
+}
+
 export function registerBlockTools(server: McpServer, bot: Bot) {
   server.tool(
     "place-block",
@@ -1272,6 +1283,13 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         if (lightLevel !== undefined && lightLevel < 8) {
           response += ` (fyi: block lighting was ${lightLevel}/15)`;
         }
+
+        // Add equipped item durability if applicable
+        const durability = getEquippedItemDurability(bot);
+        if (durability) {
+          response += ` (equipped item durability: ${durability.remaining}/${durability.max})`;
+        }
+
         return createResponse(response);
       } catch (error) {
         return createErrorResponse(error as Error);
