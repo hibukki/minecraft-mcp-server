@@ -176,10 +176,13 @@ export async function jumpOverSmallObstacleIfPossible(
   const startPos = currentPos.clone();
   const startDist = startPos.distanceTo(target);
 
-  bot.setControlState('jump', true);
   bot.setControlState('forward', true);
   await new Promise(r => setTimeout(r, 100));
+  bot.setControlState('jump', true);
+  
+  await new Promise(r => setTimeout(r, 100));
   bot.setControlState('jump', false);
+  await new Promise(r => setTimeout(r, 200));
   bot.setControlState('forward', false);
   await new Promise(r => setTimeout(r, 50));
 
