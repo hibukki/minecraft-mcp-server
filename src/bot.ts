@@ -773,7 +773,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
         const distTraveled = startPos.distanceTo(bot.entity.position);
         return createResponse(
-          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward`
+          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward${getOptionalDurabilityFyi(bot)}`
         );
       } catch (error) {
         const distTraveled = startPos.distanceTo(bot.entity.position);
@@ -842,7 +842,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         } else {
           const finalPos = bot.entity.position;
           return createResponse(
-            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}`
+            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalDurabilityFyi(bot)}`
           );
         }
       } catch (error) {
@@ -883,7 +883,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         } else {
           const finalPos = bot.entity.position;
           return createResponse(
-            `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}`
+            `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalDurabilityFyi(bot)}`
           );
         }
       } catch (error) {
@@ -1144,6 +1144,14 @@ export function getEquippedItemDurability(bot: Bot): { remaining: number; max: n
   };
 }
 
+export function getOptionalDurabilityFyi(bot: Bot): string {
+  const durability = getEquippedItemDurability(bot);
+  if (!durability) {
+    return '';
+  }
+  return ` (equipped item durability: ${durability.remaining}/${durability.max})`;
+}
+
 export function registerBlockTools(server: McpServer, bot: Bot) {
   server.tool(
     "place-block",
@@ -1283,12 +1291,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         if (lightLevel !== undefined && lightLevel < 8) {
           response += ` (fyi: block lighting was ${lightLevel}/15)`;
         }
-
-        // Add equipped item durability if applicable
-        const durability = getEquippedItemDurability(bot);
-        if (durability) {
-          response += ` (equipped item durability: ${durability.remaining}/${durability.max})`;
-        }
+        response += getOptionalDurabilityFyi(bot);
 
         return createResponse(response);
       } catch (error) {
