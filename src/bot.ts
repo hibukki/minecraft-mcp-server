@@ -538,7 +538,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           const distanceTraveled = initialDistance - currentDistance;
           return createResponse(
             `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
-            `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.`
+            `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.${getOptionalNewsFyi(bot)}`
           );
         }
 
@@ -581,7 +581,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
       return createResponse(
         `Made progress (${distanceTraveled.toFixed(1)} blocks), call again to continue.` +
-        `Remaining: ${distanceRemaining.toFixed(1)} blocks`
+        `Remaining: ${distanceRemaining.toFixed(1)} blocks${getOptionalNewsFyi(bot)}`
       );
     }
   );
@@ -692,7 +692,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const finalY = bot.entity.position.y.toFixed(1);
         const clearMessage = totalBlocksCleared > 0 ? ` (cleared ${totalBlocksCleared} blocks above)` : '';
         return createResponse(
-          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${clearMessage}`
+          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${clearMessage}${getOptionalNewsFyi(bot)}`
         );
       } catch (error) {
         bot.setControlState("jump", false);
@@ -712,7 +712,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const posAfter = bot.entity.position.clone();
 
         return createResponse(
-          `Centered bot: (${posBefore.x.toFixed(2)}, ${posBefore.z.toFixed(2)}) → (${posAfter.x.toFixed(2)}, ${posAfter.z.toFixed(2)})`
+          `Centered bot: (${posBefore.x.toFixed(2)}, ${posBefore.z.toFixed(2)}) → (${posAfter.x.toFixed(2)}, ${posAfter.z.toFixed(2)})${getOptionalNewsFyi(bot)}`
         );
       } catch (error) {
         return createErrorResponse(error as Error);
@@ -800,7 +800,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const result = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
 
         if (result.success) {
-          return createResponse("Successfully jumped over obstacle");
+          return createResponse(`Successfully jumped over obstacle${getOptionalNewsFyi(bot)}`);
         } else {
           return createResponse(result.error || "Failed to jump over obstacle");
         }
