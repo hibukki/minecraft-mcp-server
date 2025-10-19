@@ -42,8 +42,7 @@ export function formatBotPosition(pos: Vec3): string {
 }
 
 export function formatBlockPosition(pos: Vec3): string {
-  // Blocks are always at integer coordinates, but we show the center at .5
-  return `(${Math.floor(pos.x) + 0.5}, ${Math.floor(pos.y) + 0.5}, ${Math.floor(pos.z) + 0.5})`;
+  return `(${Math.floor(pos.x)}, ${Math.floor(pos.y)}, ${Math.floor(pos.z)})`;
 }
 
 // ========== Block Checking Functions ==========
