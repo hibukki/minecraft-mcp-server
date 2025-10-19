@@ -540,6 +540,9 @@ export async function digDirectlyDownIfPossible(
     }
 
     totalBlocksMined += result.blocksMined;
+
+    // Wait for bot to fall and land on the block below
+    await new Promise(resolve => setTimeout(resolve, 200));
   }
 
   return {
