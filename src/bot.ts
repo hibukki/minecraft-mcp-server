@@ -1214,6 +1214,7 @@ interface BotState {
   lastHealth?: number;
   lastDurability?: number;
   lastInventory?: Map<string, number>;
+  lastEntities?: Array<{type: string, location: {x: number, y: number, z: number}}>;
 }
 
 const botStateMap = new WeakMap<Bot, BotState>();
@@ -1278,6 +1279,54 @@ export function getOptionalNewsFyi(bot: Bot): string {
     }
   }
   state.lastInventory = currentInventory;
+
+  // Track nearby entities (within 16 blocks)
+  const maxEntityDistance = 16;
+  const currentEntities: Array<{type: string, location: {x: number, y: number, z: number}}> = [];
+
+  for (const entityId in bot.entities) {
+    const entity = bot.entities[entityId];
+    if (entity === bot.entity) continue; // Skip self
+
+    const distance = bot.entity.position.distanceTo(entity.position);
+    if (distance <= maxEntityDistance) {
+      const entityType = entity.name || (entity as any).username || entity.type || 'unknown';
+      currentEntities.push({
+        type: entityType,
+        location: {
+          x: Math.floor(entity.position.x),
+          y: Math.floor(entity.position.y),
+          z: Math.floor(entity.position.z)
+        }
+      });
+    }
+  }
+
+  // Check if entities changed
+  if (state.lastEntities) {
+    const entitiesChanged =
+      currentEntities.length !== state.lastEntities.length ||
+      !currentEntities.every((current, i) => {
+        const last = state.lastEntities![i];
+        return last &&
+               current.type === last.type &&
+               current.location.x === last.location.x &&
+               current.location.y === last.location.y &&
+               current.location.z === last.location.z;
+      });
+
+    if (entitiesChanged) {
+      if (currentEntities.length === 0) {
+        updates.push('Nearby entities: none');
+      } else {
+        const entityDescriptions = currentEntities.map(e =>
+          `${e.type} at (${e.location.x},${e.location.y},${e.location.z})`
+        );
+        updates.push(`Nearby entities: ${entityDescriptions.join(', ')}`);
+      }
+    }
+  }
+  state.lastEntities = currentEntities;
 
   if (updates.length === 0) {
     return '';
@@ -1421,10 +1470,10 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           return createResponse(
             `Successfully dug down ${result.blocksMined} block(s). ` +
             `Descended ${verticalDist.toFixed(1)} blocks. ` +
-            `Now at position ${formatBotPosition(endPos)}`
+            `Now at position ${formatBotPosition(endPos)}. +${getOptionalNewsFyi}`
           );
         } else {
-          return createResponse(result.error || `Unknown error while digging down. Dug down ${result.blocksMined} blocks`);
+          return createResponse(result.error || `Unknown error while digging down. Dug down ${result.blocksMined} blocks. +${getOptionalNewsFyi}`);
         }
       } catch (error) {
         return createErrorResponse(error as Error);
