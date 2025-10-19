@@ -554,7 +554,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const currentDistance = currentPos.distanceTo(target);
 
         // Check if we overshot the target (moved 0.5+ blocks further away)
-        if (currentDistance > previousDistance + 0.5) {
+        if (currentDistance > previousDistance + 0.1) {
           const distanceTraveled = initialDistance - currentDistance;
           return createResponse(
             `Stopped: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
@@ -581,6 +581,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         
         if (jumpResult.success || walked) {
           attempts++;
+          await new Promise(r => setTimeout(r, 50));
           continue;
         }
 
