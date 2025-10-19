@@ -61,6 +61,81 @@ export function isBlockEmpty(block: Block | null): boolean {
 }
 
 /**
+ * Check if there's a clear line of sight from one position to another
+ * Uses recursive pathfinding to detect obstructing blocks
+ *
+ * @param bot - The bot instance
+ * @param fromPos - Starting position (block coordinates)
+ * @param toPos - Target position (block coordinates)
+ * @param maxBlocksToTest - Maximum number of blocks to check (default 100) to prevent long runtime
+ * @param visited - Internal: Set of visited positions to avoid re-checking
+ * @returns Object with clear flag and array of blocking blocks if path is not clear
+ */
+export function isPathClear(
+  bot: Bot,
+  fromPos: Vec3,
+  toPos: Vec3,
+  maxBlocksToTest: number = 100,
+  visited: Set<string> = new Set()
+): { clear: boolean; blockingBlocks: Block[] } {
+  // Create a key for this position
+  const key = `${Math.floor(fromPos.x)},${Math.floor(fromPos.y)},${Math.floor(fromPos.z)}`;
+
+  // Check if we've already visited this position
+  if (visited.has(key)) {
+    return { clear: false, blockingBlocks: [] };
+  }
+
+  // Check if we've tested too many blocks
+  if (visited.size >= maxBlocksToTest) {
+    return { clear: false, blockingBlocks: [] };
+  }
+
+  // Mark this position as visited
+  visited.add(key);
+
+  // Base case: reached target
+  const flooredFrom = fromPos.floored();
+  const flooredTo = toPos.floored();
+  if (flooredFrom.x === flooredTo.x && flooredFrom.y === flooredTo.y && flooredFrom.z === flooredTo.z) {
+    return { clear: true, blockingBlocks: [] };
+  }
+
+  // Check if current position has a blocking block
+  const currentBlock = bot.blockAt(flooredFrom);
+  if (!isBlockEmpty(currentBlock)) {
+    return { clear: false, blockingBlocks: currentBlock ? [currentBlock] : [] };
+  }
+
+  // Calculate which directions move us closer to target
+  const dx = flooredTo.x - flooredFrom.x;
+  const dy = flooredTo.y - flooredFrom.y;
+  const dz = flooredTo.z - flooredFrom.z;
+
+  // Try each direction that moves us closer
+  const directions: Vec3[] = [];
+
+  if (dx > 0) directions.push(new Vec3(1, 0, 0));
+  if (dx < 0) directions.push(new Vec3(-1, 0, 0));
+  if (dy > 0) directions.push(new Vec3(0, 1, 0));
+  if (dy < 0) directions.push(new Vec3(0, -1, 0));
+  if (dz > 0) directions.push(new Vec3(0, 0, 1));
+  if (dz < 0) directions.push(new Vec3(0, 0, -1));
+
+  // Try each direction - if ANY succeeds, path is clear
+  for (const dir of directions) {
+    const nextPos = fromPos.plus(dir);
+    const result = isPathClear(bot, nextPos, toPos, maxBlocksToTest, visited);
+    if (result.clear) {
+      return result;
+    }
+  }
+
+  // No direction worked - path is blocked
+  return { clear: false, blockingBlocks: [] };
+}
+
+/**
  * Get the blocks ahead of the bot's head and feet
  */
 export function getBlocksAhead(
@@ -1460,6 +1535,19 @@ export async function tryMiningOneBlock(
 
   // Look at the block
   await bot.lookAt(blockPos.offset(0.5, 0.5, 0.5), true);
+
+  // Check if there's a clear path to the block
+  const pathCheck = isPathClear(bot, botPos, blockPos.offset(0.5, 0.5, 0.5));
+  if (!pathCheck.clear) {
+    const blockingInfo = pathCheck.blockingBlocks.length > 0
+      ? ` Blocking block(s): ${pathCheck.blockingBlocks.map(b => `${b.name} at ${formatBlockPosition(b.position)}`).join(', ')}`
+      : ' Path is obstructed';
+    return {
+      success: false,
+      blocksMined: 0,
+      error: `No clear path to ${block.name} at ${formatBlockPosition(blockPos)}.${blockingInfo}`
+    };
+  }
 
   // Check if we can dig it
   if (!bot.canDigBlock(block)) {
