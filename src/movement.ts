@@ -510,10 +510,12 @@ export async function strafeToMiddleBothXZ(bot: Bot): Promise<void> {
 
   // Center in X direction (face north or south)
   await bot.look(0, 0, false); // Face south (0 yaw = south in Minecraft)
+  await new Promise(resolve => setTimeout(resolve, 50));
   await strafeToMiddle(bot);
 
   // Center in Z direction (face east or west)
   await bot.look(Math.PI / 2, 0, false); // Face west (90 degrees)
+  await new Promise(resolve => setTimeout(resolve, 50));
   await strafeToMiddle(bot);
 
   // Restore original yaw
