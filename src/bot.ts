@@ -63,13 +63,6 @@ interface InventoryItem {
   };
 }
 
-interface FaceOption {
-  direction: string;
-  vector: Vec3;
-}
-
-type FaceDirection = "up" | "down" | "north" | "south" | "east" | "west";
-
 interface StoredMessage {
   timestamp: number;
   username: string;
@@ -1301,22 +1294,8 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
-      faceDirection: z
-        .enum(["up", "down", "north", "south", "east", "west"])
-        .optional()
-        .describe("Direction to place against (default: 'down')"),
     },
-    async ({
-      x,
-      y,
-      z,
-      faceDirection = "down",
-    }: {
-      x: number;
-      y: number;
-      z: number;
-      faceDirection?: FaceDirection;
-    }): Promise<McpResponse> => {
+    async ({ x, y, z }): Promise<McpResponse> => {
       try {
         const placePos = new Vec3(x, y, z);
         const blockAtPos = bot.blockAt(placePos);
@@ -1326,63 +1305,35 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           );
         }
 
-        const possibleFaces: FaceOption[] = [
-          { direction: "down", vector: new Vec3(0, -1, 0) },
-          { direction: "north", vector: new Vec3(0, 0, -1) },
-          { direction: "south", vector: new Vec3(0, 0, 1) },
-          { direction: "east", vector: new Vec3(1, 0, 0) },
-          { direction: "west", vector: new Vec3(-1, 0, 0) },
-          { direction: "up", vector: new Vec3(0, 1, 0) },
+        // Try all 6 faces
+        const faces: Array<{ name: string; vec: Vec3 }> = [
+          { name: "down", vec: new Vec3(0, -1, 0) },
+          { name: "up", vec: new Vec3(0, 1, 0) },
+          { name: "north", vec: new Vec3(0, 0, -1) },
+          { name: "south", vec: new Vec3(0, 0, 1) },
+          { name: "west", vec: new Vec3(-1, 0, 0) },
+          { name: "east", vec: new Vec3(1, 0, 0) },
         ];
 
-        // Prioritize the requested face direction
-        if (faceDirection !== "down") {
-          const specificFace = possibleFaces.find(
-            (face) => face.direction === faceDirection
-          );
-          if (specificFace) {
-            possibleFaces.unshift(
-              possibleFaces.splice(possibleFaces.indexOf(specificFace), 1)[0]
-            );
-          }
-        }
-
-        // Try each potential face for placing
-        for (const face of possibleFaces) {
-          const referencePos = placePos.plus(face.vector);
-          const referenceBlock = bot.blockAt(referencePos);
-
-          if (referenceBlock && referenceBlock.name !== "air") {
-            if (!bot.canSeeBlock(referenceBlock)) {
-              // Block not visible - try next face
-              continue;
-            }
-
-            await bot.lookAt(placePos, true);
-
+        for (const face of faces) {
+          const refBlock = bot.blockAt(placePos.plus(face.vec));
+          if (refBlock && refBlock.name !== "air" /* && bot.canSeeBlock(refBlock) */) {
             try {
-              await bot.placeBlock(referenceBlock, face.vector.scaled(-1));
-              return createResponse(
-                `Placed block at (${x}, ${y}, ${z}) using ${face.direction} face`
-              );
-            } catch (placeError) {
-              log(
-                "warn",
-                `Failed to place using ${face.direction} face: ${formatError(
-                  placeError
-                )}`
-              );
+              await bot.lookAt(placePos, true);
+              await bot.placeBlock(refBlock, face.vec.scaled(-1));
+              return createResponse(`Placed block at (${x}, ${y}, ${z}) using ${face.name} face`);
+            } catch {
+              // Try next face
               continue;
             }
           }
         }
 
-        const distanceToTarget = bot.entity.position.distanceTo(placePos);
-        let errorMessage = `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found`;
-        if (distanceToTarget < 1) {
-          errorMessage += `. Distance to target: ${distanceToTarget.toFixed(2)} blocks - the bot might be standing too close`;
-        }
-        return createResponse(errorMessage);
+        const dist = bot.entity.position.distanceTo(placePos);
+        return createResponse(
+          `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found` +
+          (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : '')
+        );
       } catch (error) {
         return createErrorResponse(error as Error);
       }
