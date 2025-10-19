@@ -13,19 +13,13 @@ import { hideBin } from "yargs/helpers";
 
 import type { Entity } from "prismarine-entity";
 import {
-  type AxisAlignedDirection,
   formatBotPosition,
   formatBlockPosition,
   getBlocksAhead,
   getNextXZAlignedDirection,
   jumpOverSmallObstacleIfPossible,
   walkForwardsIfPossible,
-  getBotAxisAlignedDirection,
-  getStrafeDirectionAndAmount,
-  strafeToMiddle,
-  strafeToMiddleBothXZ,
   walkForwardsAtLeastOneBlockXZAligned,
-  mineForwardsIfPossible,
   digDirectlyDownIfPossible,
   getAdjacentBlocks,
   mineStepsUp,
@@ -33,6 +27,10 @@ import {
   mineStepsDown,
   getBotPosition,
 } from "./movement.js";
+import {
+  strafeToMiddleBothXZ,
+  mineForwardsIfPossible
+} from "./getStrafeDirectionAndAmount.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
@@ -517,6 +515,27 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         setTimeout(() => bot.setControlState("jump", false), 250);
 
         return createResponse("Jumped in place");
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
+    "toggle-swim-up-jump-up",
+    "Toggle the bot's jump state on or off. When underwater, holding jump makes the bot swim upward. Use this to control swimming or jumping state.",
+    {
+      enabled: z.boolean().describe("true to start jumping/swimming up, false to stop"),
+    },
+    async ({ enabled }): Promise<McpResponse> => {
+      try {
+        bot.setControlState("jump", enabled);
+
+        if (enabled) {
+          return createResponse("Jump/swim-up enabled (bot will continuously jump or swim upward)");
+        } else {
+          return createResponse("Jump/swim-up disabled");
+        }
       } catch (error) {
         return createErrorResponse(error as Error);
       }
