@@ -549,6 +549,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       // Try to move toward target with obstacle handling
       const MAX_ATTEMPTS = 20;
       let attempts = 0;
+      let previousDistance = initialDistance;
 
       while (attempts < MAX_ATTEMPTS) {
         // Look toward the target
@@ -558,6 +559,16 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         await bot.lookAt(lookTarget, false);
 
         const currentDistance = currentPos.distanceTo(target);
+
+        // Check if we overshot the target (moved 0.5+ blocks further away)
+        if (currentDistance > previousDistance + 0.5) {
+          const distanceTraveled = initialDistance - currentDistance;
+          return createResponse(
+            `Stopped: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            `Distance to target: ${currentDistance.toFixed(1)} blocks.${getOptionalNewsFyi(bot)}`
+          );
+        }
+        previousDistance = currentDistance;
         const horizontalDistance = Math.sqrt(
           Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
         );
