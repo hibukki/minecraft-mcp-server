@@ -1218,6 +1218,7 @@ interface BotState {
   lastOxygen?: number;
   lastHealth?: number;
   lastDurability?: number;
+  lastInventory?: Map<string, number>;
 }
 
 const botStateMap = new WeakMap<Bot, BotState>();
@@ -1256,6 +1257,32 @@ export function getOptionalNewsFyi(bot: Bot): string {
   } else {
     state.lastDurability = undefined;
   }
+
+  // Track inventory changes
+  const currentInventory = new Map<string, number>();
+  for (const item of bot.inventory.items()) {
+    const itemName = item.name;
+    const currentCount = currentInventory.get(itemName) || 0;
+    currentInventory.set(itemName, currentCount + item.count);
+  }
+
+  if (state.lastInventory) {
+    const inventoryChanges: string[] = [];
+
+    // Check for added or increased items
+    for (const [itemName, currentCount] of currentInventory) {
+      const previousCount = state.lastInventory.get(itemName) || 0;
+      const diff = currentCount - previousCount;
+      if (diff > 0) {
+        inventoryChanges.push(`+${diff}x ${itemName}`);
+      }
+    }
+
+    if (inventoryChanges.length > 0) {
+      updates.push(`Inventory: ${inventoryChanges.join(', ')}`);
+    }
+  }
+  state.lastInventory = currentInventory;
 
   if (updates.length === 0) {
     return '';
