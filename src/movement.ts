@@ -1398,6 +1398,9 @@ export async function tryMiningOneBlock(
   const blockPos = block.position;
   const distance = botPos.distanceTo(blockPos);
 
+  // Don't walk
+  bot.setControlState('forward', false);
+
   // Check if block is diagonal in XZ plane (unless explicitly allowed)
   // Diagonal in Y (up/down) is OK, but diagonal in XZ (horizontal) is NOT OK
   if (!allowMiningDiagonalBlocks) {
