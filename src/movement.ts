@@ -596,6 +596,7 @@ export async function digDirectlyDownIfPossible(
     const currentBotPos = bot.entity.position;
     const blockUnderUs = bot.blockAt(currentBotPos.offset(0, -1, 0));
     const blockUnderUnderUs = bot.blockAt(currentBotPos.offset(0, -2, 0));
+    const blockUnderUnderUnderUs = bot.blockAt(currentBotPos.offset(0, -3, 0));
 
     // Safety check: make sure there's a solid block two blocks down
     // so we don't fall into a hole when we dig the block under us
@@ -604,6 +605,14 @@ export async function digDirectlyDownIfPossible(
         success: false,
         blocksMined: totalBlocksMined,
         error: `Not digging for caution: block at ${formatBlockPosition(currentBotPos.offset(0, -2, 0))} (below what we are digging) is ${blockUnderUnderUs?.name || 'null'}, would fall into hole if we dug one down. Use dig-adjacent-block at your own risk`
+      };
+    }
+
+    if (isBlockEmpty(blockUnderUnderUnderUs)) {
+      return {
+        success: false,
+        blocksMined: totalBlocksMined,
+        error: `Not digging for caution: block at ${formatBlockPosition(currentBotPos.offset(0, -3, 0))} (below what we are digging) is ${blockUnderUnderUs?.name || 'null'}, would fall into hole if we dug one down. Use dig-adjacent-block at your own risk`
       };
     }
 
