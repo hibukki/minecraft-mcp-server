@@ -123,16 +123,20 @@ export function isPathClear(
   if (dz < 0) directions.push(new Vec3(0, 0, -1));
 
   // Try each direction - if ANY succeeds, path is clear
+  // Collect all blocking blocks we find along the way
+  const blockingBlocksFoundSoFar: Block[] = [];
   for (const dir of directions) {
     const nextPos = fromPos.plus(dir);
     const result = isPathClear(bot, nextPos, toPos, maxBlocksToTest, visited);
     if (result.clear) {
       return result;
     }
+    // Collect blocking blocks from this failed path
+    blockingBlocksFoundSoFar.push(...result.blockingBlocks);
   }
 
-  // No direction worked - path is blocked
-  return { clear: false, blockingBlocks: [] };
+  // No direction worked - path is blocked, return all blocking blocks we found
+  return { clear: false, blockingBlocks: blockingBlocksFoundSoFar };
 }
 
 /**
