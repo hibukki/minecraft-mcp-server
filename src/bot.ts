@@ -1424,7 +1424,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           return createResponse(result.error || "Failed to mine block");
         }
 
-        let response = `Dug ${block.name} at (${x}, ${y}, ${z}). To pick up block, you might have to walk to it`;
+        let response = `Dug ${block.name} at (${x}, ${y}, ${z}). To pick up block, you might have to walk to it (or maybe there's a block in the way)`;
         // Add light level warning if it's dark
         const lightInfo = getLightLevel(block);
         if (lightInfo && lightInfo.totalLight < 8) {
