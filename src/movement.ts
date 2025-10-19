@@ -49,11 +49,15 @@ export function formatBlockPosition(pos: Vec3): string {
 // ========== Block Checking Functions ==========
 
 /**
- * Check if a block is empty (air, water, or lava - things we can move through)
+ * Check if a block is empty (air, water, lava, or passable blocks like flowers - things we can move through)
  */
 export function isBlockEmpty(block: Block | null): boolean {
   if (!block) return true;
-  return block.name === 'air' || block.name === 'water' || block.name === 'lava';
+  // Check for air, water, lava
+  if (block.name === 'air' || block.name === 'water' || block.name === 'lava') return true;
+  // Check for passable blocks (flowers, tall grass, etc.) which have no collision
+  if (block.boundingBox === 'empty') return true;
+  return false;
 }
 
 /**
@@ -63,11 +67,13 @@ export function getBlocksAhead(
   bot: Bot,
   currentPos: Vec3,
   direction: AxisAlignedDirection
-): { blockAheadOfHead: Block | null; blockAheadOfFeet: Block | null } {
-  const blockAheadOfFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor());
-  const blockAheadOfHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor());
+): { blockAheadOfHead: Block; blockAheadOfFeet: Block,  blockAheadOfFeetClear: boolean, blockAheadOfHeadClear: boolean} {
+  const blockAheadOfFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor())!;
+  const blockAheadOfHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor())!;
+  const blockAheadOfFeetClear = isBlockEmpty(blockAheadOfFeet);
+  const blockAheadOfHeadClear = isBlockEmpty(blockAheadOfHead);
 
-  return { blockAheadOfHead, blockAheadOfFeet };
+  return { blockAheadOfHead, blockAheadOfFeet, blockAheadOfFeetClear, blockAheadOfHeadClear };
 }
 
 // ========== Basic Movement Helper Functions ==========
@@ -126,7 +132,8 @@ export async function jumpOverSmallObstacleIfPossible(
   bot: Bot,
   currentPos: Vec3,
   direction: AxisAlignedDirection,
-  target: Vec3
+  target: Vec3,
+  thenStop: boolean = true,
 ): Promise<JumpResult> {
   // Check all relevant blocks
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
@@ -183,9 +190,12 @@ export async function jumpOverSmallObstacleIfPossible(
   
   await new Promise(r => setTimeout(r, 100));
   bot.setControlState('jump', false);
-  await new Promise(r => setTimeout(r, 200));
-  bot.setControlState('forward', false);
+  if (thenStop) {
+    await new Promise(r => setTimeout(r, 200));
+    bot.setControlState('forward', false);
+  }
   await new Promise(r => setTimeout(r, 50));
+  
 
   const endPos = bot.entity.position;
   const endDist = endPos.distanceTo(target);
@@ -211,7 +221,8 @@ export async function jumpOverSmallObstacleIfPossible(
 export async function walkForwardsIfPossible(
   bot: Bot,
   currentPos: Vec3,
-  direction: AxisAlignedDirection
+  direction: AxisAlignedDirection,
+  thenStop: boolean = true,
 ): Promise<boolean> {
   logger.debug("Running walkForwardsIfPossible")
   const { blockAheadOfHead, blockAheadOfFeet } = getBlocksAhead(bot, currentPos, direction);
@@ -220,7 +231,7 @@ export async function walkForwardsIfPossible(
   const headClear = isBlockEmpty(blockAheadOfHead);
 
   if (feetClear && headClear) {
-    walkForwardsAtLeastOneBlock(bot, blockAheadOfFeet!.position)
+    walkForwardsAtLeastOneBlock(bot, blockAheadOfFeet!.position, thenStop)
     return true;
   }
 
@@ -243,14 +254,17 @@ export async function walkForwardsAtLeastOneBlockXZAligned(
 
 export async function walkForwardsAtLeastOneBlock(
   bot: Bot,
-  target: Vec3
+  target: Vec3,
+  thenStop: boolean = true
 ): Promise<void> {
   await bot.lookAt(target, false);
 
   // Walk forward for 500ms
   bot.setControlState('forward', true);
   await new Promise(r => setTimeout(r, 500));
-  bot.setControlState('forward', false);
+  if (thenStop) {
+      bot.setControlState('forward', false);
+  }
 }
 
 // ========== Strafe Functions ==========

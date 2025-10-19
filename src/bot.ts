@@ -571,9 +571,9 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           );
         }
 
-        const walked = await walkForwardsIfPossible(bot, currentPos, direction);
-
-        const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+        const walked = await walkForwardsIfPossible(bot, currentPos, direction, false);
+        
+        const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target, false);
         
         if (jumpResult.success || walked) {
           attempts++;
