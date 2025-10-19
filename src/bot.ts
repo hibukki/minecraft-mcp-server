@@ -29,11 +29,11 @@ import {
   digDirectlyDownIfPossible,
   getAdjacentBlocks,
   mineStepsUp,
-  tryMiningOneBlock,
   pillarUpOneBlock,
   mineStepsDown,
   getBotPosition,
 } from "./movement.js";
+import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
