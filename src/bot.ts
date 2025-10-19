@@ -35,7 +35,7 @@ import {
   getBotPosition,
 } from "./movement.js";
 import { formatError, log } from "./bot_log.js";
-import { logToolCall, logBotState, logGameEvent } from "./logger.js";
+import logger, { logToolCall, logBotState, logGameEvent } from "./logger.js";
 
 // ========== Type Definitions ==========
 
@@ -1155,11 +1155,40 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
 
 // ========== Block Interaction Tools ==========
 
-export function getLightLevel(light: number | undefined): string {
-  if (light === undefined || light === null) {
+export interface LightLevelInfo {
+  lightFromSun: number;
+  lightFromBlocks: number;
+  totalLight: number;
+}
+
+export function getLightLevel(block: { light?: number; skyLight?: number } | null | undefined): LightLevelInfo | null {
+  if (!block || ((block.light === undefined || block.light === null) && (block.skyLight === undefined || block.skyLight === null))) {
+    return null;
+  }
+
+  const lightFromBlocks = block.light ?? 0;
+  const lightFromSun = block.skyLight ?? 0;
+  const totalLight = Math.max(lightFromBlocks, lightFromSun);
+
+  return {
+    lightFromSun,
+    lightFromBlocks,
+    totalLight
+  };
+}
+
+export function getBlockLightLevelFormatted(block: { light?: number; skyLight?: number } | null | undefined): string {
+  const lightInfo = getLightLevel(block);
+
+  if (!lightInfo) {
     return "light: ?/15";
   }
-  return `light: ${light}/15`;
+
+  // Debug log the raw values
+  logger.debug(`Light levels - sun: ${lightInfo.lightFromSun}, blocks: ${lightInfo.lightFromBlocks}, total: ${lightInfo.totalLight}`);
+
+  // Return formatted string with total light level
+  return `light: ${lightInfo.totalLight}/15`;
 }
 
 export function getEquippedItemDurability(bot: Bot): { remaining: number; max: number } | null {
@@ -1350,9 +1379,6 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           );
         }
 
-        // Check light level before digging
-        const lightLevel = block.light;
-
         // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
         const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
@@ -1362,8 +1388,9 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
 
         let response = `Dug ${block.name} at (${x}, ${y}, ${z}). To pick up block, you might have to walk to it`;
         // Add light level warning if it's dark
-        if (lightLevel !== undefined && lightLevel < 8) {
-          response += ` (fyi: block lighting was ${lightLevel}/15)`;
+        const lightInfo = getLightLevel(block);
+        if (lightInfo && lightInfo.totalLight < 8) {
+          response += ` (fyi: effective light was ${lightInfo.totalLight}/15)`;
         }
         response += getOptionalNewsFyi(bot);
 
@@ -1433,7 +1460,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           );
         }
 
-        const lightInfo = getLightLevel(block.light);
+        const lightInfo = getBlockLightLevelFormatted(block);
 
         return createResponse(
           `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z}), ${lightInfo}`
@@ -1465,7 +1492,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           if (!block) {
             result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
           } else {
-            const lightInfo = getLightLevel(block.light);
+            const lightInfo = getBlockLightLevelFormatted(block);
             result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
           }
         }
