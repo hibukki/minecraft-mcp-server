@@ -1379,7 +1379,10 @@ export function registerSurvivalTools(server: McpServer, bot: Bot) {
     },
     async ({ x, y, z }) => {
       const pos = new Vec3(x, y, z);
-      const block = expectBlockOfType(bot, pos, (name) => bot.isABed(bot.blockAt(pos)!));
+      const block = expectBlock(bot, pos);
+      if (!bot.isABed(block)) {
+        throw new Error(`Block at ${formatPosition(pos)} is not a bed`);
+      }
       await bot.sleep(block);
       return `Sleeping in bed at ${formatPosition(pos)}`;
     }
