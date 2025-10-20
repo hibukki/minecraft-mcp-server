@@ -461,26 +461,23 @@ export function registerSmeltingTools(server: McpServer, bot: Bot) {
 
 
 export function registerPositionTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "get-position",
     "Get the current position of the bot",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const { botFeetPosition, botHeadPosition, blockUnderBotFeet } = getBotPosition(bot);
-
-        return createResponse(
-          `Bot feet position: (${botFeetPosition.x}, ${botFeetPosition.y}, ${botFeetPosition.z})\n` +
-          `Bot head position: (${botHeadPosition.x}, ${botHeadPosition.y}, ${botHeadPosition.z})\n` +
-          `Block under bot feet: ${blockUnderBotFeet?.name || 'null'}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      const { botFeetPosition, botHeadPosition, blockUnderBotFeet } = getBotPosition(bot);
+      return `Bot feet position: (${botFeetPosition.x}, ${botFeetPosition.y}, ${botFeetPosition.z})\n` +
+        `Bot head position: (${botHeadPosition.x}, ${botHeadPosition.y}, ${botHeadPosition.z})\n` +
+        `Block under bot feet: ${blockUnderBotFeet?.name || 'null'}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "look-at",
     "Make the bot look at a specific position",
     {
@@ -488,55 +485,46 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        await bot.lookAt(new Vec3(x, y, z), true);
-
-        return createResponse(`Looking at position (${x}, ${y}, ${z})`);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async ({ x, y, z }) => {
+      await bot.lookAt(new Vec3(x, y, z), true);
+      return `Looking at position (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "jump-in-place",
     "Make the bot jump",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        bot.setControlState("jump", true);
-        setTimeout(() => bot.setControlState("jump", false), 250);
-
-        return createResponse("Jumped in place");
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      bot.setControlState("jump", true);
+      setTimeout(() => bot.setControlState("jump", false), 250);
+      return "Jumped in place";
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "toggle-swim-up-jump-up",
     "Toggle the bot's jump state on or off. When underwater, holding jump makes the bot swim upward. Use this to control swimming or jumping state.",
     {
       enabled: z.boolean().describe("true to start jumping/swimming up, false to stop"),
     },
-    async ({ enabled }): Promise<McpResponse> => {
-      try {
-        bot.setControlState("jump", enabled);
-
-        if (enabled) {
-          return createResponse("Jump/swim-up enabled (bot will continuously jump or swim upward)");
-        } else {
-          return createResponse("Jump/swim-up disabled");
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async ({ enabled }) => {
+      bot.setControlState("jump", enabled);
+      if (enabled) {
+        return "Jump/swim-up enabled (bot will continuously jump or swim upward)";
+      } else {
+        return "Jump/swim-up disabled";
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "move-horizontally",
     "Move the bot toward a target block that is more or less the same height (Y) as the bot. Doesn't dig down (for a low Y target), doesn't build up (for a high Y target), so bad for those",
     {
@@ -544,11 +532,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetY: z.number().describe("Target Y coordinate"),
       targetZ: z.number().describe("Target Z coordinate"),
     },
-    async ({
-      targetX,
-      targetY,
-      targetZ,
-    }): Promise<McpResponse> => {
+    async ({ targetX, targetY, targetZ }) => {
       const target = new Vec3(targetX, targetY, targetZ);
       const startPos = bot.entity.position.clone();
       const initialDistance = startPos.distanceTo(target);
@@ -571,10 +555,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         if (currentDistance > closestDistance + 1.0) {
           const distanceTraveled = initialDistance - currentDistance;
           bot.setControlState('forward', false);
-          return createResponse(
-            `Stopped: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
-            `Distance to target: ${currentDistance.toFixed(1)} blocks. Closest was: ${closestDistance.toFixed(1)} blocks.${getOptionalNewsFyi(bot)}`
-          );
+          return `Stopped: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            `Distance to target: ${currentDistance.toFixed(1)} blocks. Closest was: ${closestDistance.toFixed(1)} blocks.`;
         }
         closestDistance = Math.min(closestDistance, currentDistance);
         const horizontalDistance = Math.sqrt(
@@ -584,16 +566,14 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         // Check if we've reached the target (within 1.5 blocks horizontally)
         if (horizontalDistance <= 1.5) {
           const distanceTraveled = initialDistance - currentDistance;
-          return createResponse(
-            `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
-            `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.${getOptionalNewsFyi(bot)}`
-          );
+          return `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.`;
         }
 
         const walked = await walkForwardsIfPossible(bot, currentPos, direction, false);
-        
+
         const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target, false);
-        
+
         if (jumpResult.success || walked) {
           attempts++;
           await new Promise(r => setTimeout(r, 50));
@@ -601,7 +581,6 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         }
 
         // Failed to make progress
-
         const endPos = bot.entity.position;
         const distanceTraveled = startPos.distanceTo(endPos);
         const distanceRemaining = endPos.distanceTo(target);
@@ -614,13 +593,11 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
           : 'air or null';
 
-        return createResponse(
-          `Stuck after ${attempts} steps. ` +
+        return `Stuck after ${attempts} steps. ` +
           `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
           `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
           `Block ahead of bot's head: ${headInfo}, ahead of bot's feet: ${feetInfo}. ` +
-          `Tried jumping and got: ${jumpResult.error}`
-        );
+          `Tried jumping and got: ${jumpResult.error}`;
       }
 
       // Reached MAX_ATTEMPTS
@@ -628,14 +605,14 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       const distanceTraveled = startPos.distanceTo(endPos);
       const distanceRemaining = endPos.distanceTo(target);
 
-      return createResponse(
-        `Made progress (${distanceTraveled.toFixed(1)} blocks), call again to continue.` +
-        `Remaining: ${distanceRemaining.toFixed(1)} blocks${getOptionalNewsFyi(bot)}`
-      );
+      return `Made progress (${distanceTraveled.toFixed(1)} blocks), call again to continue.` +
+        `Remaining: ${distanceRemaining.toFixed(1)} blocks`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "swim-horizontally",
     "Swim horizontally toward a target position. Enables jump/swim-up and moves forward in a loop, stopping forward movement when target is reached or overshot. Keeps jump enabled at the end in case still in water.",
     {
@@ -643,26 +620,22 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetY: z.number().describe("Target Y coordinate"),
       targetZ: z.number().describe("Target Z coordinate"),
     },
-    async ({
-      targetX,
-      targetY,
-      targetZ,
-    }): Promise<McpResponse> => {
+    async ({ targetX, targetY, targetZ }) => {
+      const target = new Vec3(targetX, targetY, targetZ);
+      const startPos = bot.entity.position.clone();
+      const initialDistance = startPos.distanceTo(target);
+
+      // Enable jump/swim-up at the start
+      bot.setControlState("jump", true);
+
+      // Enable forward movement
+      bot.setControlState("forward", true);
+
+      const MAX_ATTEMPTS = 50;
+      let attempts = 0;
+      let closestDistance = initialDistance;
+
       try {
-        const target = new Vec3(targetX, targetY, targetZ);
-        const startPos = bot.entity.position.clone();
-        const initialDistance = startPos.distanceTo(target);
-
-        // Enable jump/swim-up at the start
-        bot.setControlState("jump", true);
-
-        // Enable forward movement
-        bot.setControlState("forward", true);
-
-        const MAX_ATTEMPTS = 50;
-        let attempts = 0;
-        let closestDistance = initialDistance;
-
         while (attempts < MAX_ATTEMPTS) {
           // Look toward the target
           const currentPos = bot.entity.position;
@@ -674,11 +647,9 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           if (currentDistance > closestDistance + 0.5) {
             const distanceTraveled = initialDistance - currentDistance;
             bot.setControlState('forward', false);
-            return createResponse(
-              `Stopped forward movement: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            return `Stopped forward movement: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
               `Distance to target: ${currentDistance.toFixed(1)} blocks. Closest was: ${closestDistance.toFixed(1)} blocks. ` +
-              `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
-            );
+              `Jump/swim-up still enabled.`;
           }
 
           closestDistance = Math.min(closestDistance, currentDistance);
@@ -691,11 +662,9 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           if (horizontalDistance <= 0.5) {
             const distanceTraveled = initialDistance - currentDistance;
             bot.setControlState('forward', false);
-            return createResponse(
-              `Reached target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+            return `Reached target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
               `Final distance to target: ${currentDistance.toFixed(1)} blocks. ` +
-              `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
-            );
+              `Jump/swim-up still enabled.`;
           }
 
           attempts++;
@@ -708,20 +677,20 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         const distanceRemaining = endPos.distanceTo(target);
         bot.setControlState('forward', false);
 
-        return createResponse(
-          `Reached iteration limit (${MAX_ATTEMPTS} attempts). Traveled ${distanceTraveled.toFixed(1)} blocks. ` +
+        return `Reached iteration limit (${MAX_ATTEMPTS} attempts). Traveled ${distanceTraveled.toFixed(1)} blocks. ` +
           `Remaining: ${distanceRemaining.toFixed(1)} blocks. Call again to continue. ` +
-          `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
-        );
+          `Jump/swim-up still enabled.`;
       } catch (error) {
         bot.setControlState('forward', false);
         // Keep jump enabled even on error
-        return createErrorResponse(error as Error);
+        throw error;
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "move-up-by-pillaring",
     "Build a pillar by jumping and placing blocks below. Good for trying to go way up.",
     {
@@ -731,25 +700,20 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Optional tool-to-blocks mapping for auto-mining blocks above: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
     },
-    async ({ height, allowMiningOf = {} }): Promise<McpResponse> => {
+    async ({ height, allowMiningOf = {} }) => {
       try {
         // Check if bot has a placeable block equipped
         const heldItem = bot.heldItem;
         if (!heldItem) {
-          return createResponse(
-            "No item equipped. Please equip a block (e.g., cobblestone, dirt) in hand before pillaring up."
-          );
+          return "No item equipped. Please equip a block (e.g., cobblestone, dirt) in hand before pillaring up.";
         }
 
         const mcData = minecraftData(bot.version);
 
         // Check if the held item corresponds to a placeable block
-        // Look up by name since item IDs and block IDs are different
         const blockData = mcData.blocksByName[heldItem.name];
         if (!blockData) {
-          return createResponse(
-            `Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`
-          );
+          return `Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`;
         }
 
         const buildingBlockName = heldItem.name;
@@ -760,7 +724,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         for (let i = 0; i < height; i++) {
           // Before each pillar iteration, clear blocks within reachable range (Y+2, Y+3, Y+4)
           const currentPos = bot.entity.position;
-          const blocksToCheck = [2, 3, 4]; // Y+2, Y+3, Y+4 (bot can reach ~3 blocks above head)
+          const blocksToCheck = [2, 3, 4];
 
           for (const yOffset of blocksToCheck) {
             const blockAbove = bot.blockAt(currentPos.offset(0, yOffset, 0).floor());
@@ -768,9 +732,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
               // Try to mine this block using tryMiningOneBlock
               const mineResult = await tryMiningOneBlock(bot, blockAbove, allowMiningOf, 3);
               if (!mineResult.success) {
-                return createResponse(
-                  `Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`
-                );
+                return `Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`;
               }
               totalBlocksCleared++;
             }
@@ -779,9 +741,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           // Re-equip the building block (in case we switched to a tool for mining)
           const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
           if (!buildingBlock) {
-            return createResponse(
-              `Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`
-            );
+            return `Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`;
           }
           await bot.equip(buildingBlock, 'hand');
           const beforeY = bot.entity.position.y.toFixed(1);
@@ -798,14 +758,11 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
             // Check if we still have blocks equipped
             const currentItem = bot.heldItem;
             if (!currentItem) {
-              return createResponse(
-                `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-                `Ran out of blocks to place.`
-              );
+              return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+                `Ran out of blocks to place.`;
             }
 
             // Check the 3 blocks above the player to see what's blocking
-            // Player occupies 2 blocks (Y+0 feet, Y+1 head), so check Y+2, Y+3, Y+4
             const currentPos = bot.entity.position;
             const blocksAbove: string[] = [];
             for (let yOffset = 2; yOffset <= 4; yOffset++) {
@@ -817,45 +774,37 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
             const equippedInfo = currentItem ? `${currentItem.name} (x${currentItem.count})` : 'nothing';
 
-            return createResponse(
-              `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`
-            );
+            return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`;
           }
         }
 
         const finalY = bot.entity.position.y.toFixed(1);
         const clearMessage = totalBlocksCleared > 0 ? ` (cleared ${totalBlocksCleared} blocks above)` : '';
-        return createResponse(
-          `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${clearMessage}${getOptionalNewsFyi(bot)}`
-        );
-      } catch (error) {
+        return `Pillared up ${blocksPlaced} blocks (from Y=${startY} to Y=${finalY})${clearMessage}`;
+      } finally {
         bot.setControlState("jump", false);
-        return createErrorResponse(error as Error);
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "center-in-block",
     "Center the bot in both X and Z axes within the current block",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const posBefore = bot.entity.position.clone();
-        await strafeToMiddleBothXZ(bot);
-        const posAfter = bot.entity.position.clone();
-
-        return createResponse(
-          `Centered bot: (${posBefore.x.toFixed(2)}, ${posBefore.z.toFixed(2)}) → (${posAfter.x.toFixed(2)}, ${posAfter.z.toFixed(2)})${getOptionalNewsFyi(bot)}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      const posBefore = bot.entity.position.clone();
+      await strafeToMiddleBothXZ(bot);
+      const posAfter = bot.entity.position.clone();
+      return `Centered bot: (${posBefore.x.toFixed(2)}, ${posBefore.z.toFixed(2)}) → (${posAfter.x.toFixed(2)}, ${posAfter.z.toFixed(2)})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "move-forwards-by-mining",
     "Mines blocks ahead and walks forward, repeating for the specified number of blocks to make progress underground",
     {
@@ -875,7 +824,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Timeout for digging in seconds (default: 3)"),
     },
-    async ({ targetX, targetY, targetZ, allowMiningOf, numBlocksForwards = 1, digTimeout = 3 }): Promise<McpResponse> => {
+    async ({ targetX, targetY, targetZ, allowMiningOf, numBlocksForwards = 1, digTimeout = 3 }) => {
       const target = new Vec3(targetX, targetY, targetZ);
       const startPos = bot.entity.position.clone();
       let totalBlocksMined = 0;
@@ -883,7 +832,6 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       await strafeToMiddleBothXZ(bot);
 
       try {
-
         for (let i = 0; i < numBlocksForwards; i++) {
           const currentPos = bot.entity.position;
           const direction = getNextXZAlignedDirection(bot, target);
@@ -895,9 +843,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
           if (!result.success) {
             const distTraveled = startPos.distanceTo(bot.entity.position);
-            return createResponse(
-              `Mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks before encountering error: ${result.error}`
-            );
+            return `Mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks before encountering error: ${result.error}`;
           }
 
           totalBlocksMined += result.blocksMined;
@@ -907,18 +853,17 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         }
 
         const distTraveled = startPos.distanceTo(bot.entity.position);
-        return createResponse(
-          `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward${getOptionalNewsFyi(bot)}`
-        );
+        return `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward`;
       } catch (error) {
         const distTraveled = startPos.distanceTo(bot.entity.position);
-        const errorMsg = `${formatError(error)}. Progress: mined ${totalBlocksMined} block(s), traveled ${distTraveled.toFixed(1)} blocks`;
-        return createErrorResponse(errorMsg);
+        throw new Error(`${formatError(error)}. Progress: mined ${totalBlocksMined} block(s), traveled ${distTraveled.toFixed(1)} blocks`);
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "jump-over-obstacle",
     "Jump over a small obstacle ahead of the bot in the direction toward target. Good for obstacles of height 1 (blocking the bot's feet but not head)",
     {
@@ -926,26 +871,24 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetY: z.number().describe("Target Y coordinate to determine direction"),
       targetZ: z.number().describe("Target Z coordinate to determine direction"),
     },
-    async ({ targetX, targetY, targetZ }): Promise<McpResponse> => {
-      try {
-        const target = new Vec3(targetX, targetY, targetZ);
-        const currentPos = bot.entity.position;
-        const direction = getNextXZAlignedDirection(bot, target);
+    async ({ targetX, targetY, targetZ }) => {
+      const target = new Vec3(targetX, targetY, targetZ);
+      const currentPos = bot.entity.position;
+      const direction = getNextXZAlignedDirection(bot, target);
 
-        const result = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
+      const result = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
 
-        if (result.success) {
-          return createResponse(`Successfully jumped over obstacle${getOptionalNewsFyi(bot)}`);
-        } else {
-          return createResponse(result.error || "Failed to jump over obstacle");
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (result.success) {
+        return `Successfully jumped over obstacle`;
+      } else {
+        return result.error || "Failed to jump over obstacle";
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "move-horizontally-and-down-using-steps",
     "Mine down multiple steps. Good for going vertically and down at the same time wile mining.",
     {
@@ -965,28 +908,22 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Timeout for digging in seconds (default: 3)"),
     },
-    async ({ allowMiningOf, stepsToGoDown, nextStepPos, digTimeout = 3 }): Promise<McpResponse> => {
-      try {
-        const nextStepVec = new Vec3(nextStepPos.x, nextStepPos.y, nextStepPos.z);
-        const result = await mineStepsDown(bot, stepsToGoDown, nextStepVec, allowMiningOf, digTimeout);
+    async ({ allowMiningOf, stepsToGoDown, nextStepPos, digTimeout = 3 }) => {
+      const nextStepVec = new Vec3(nextStepPos.x, nextStepPos.y, nextStepPos.z);
+      const result = await mineStepsDown(bot, stepsToGoDown, nextStepVec, allowMiningOf, digTimeout);
 
-        if (result.error) {
-          return createResponse(
-            `Completed ${result.stepsCompleted} of ${stepsToGoDown} steps before encountering error: ${result.error}`
-          );
-        } else {
-          const finalPos = bot.entity.position;
-          return createResponse(
-            `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalNewsFyi(bot)}`
-          );
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (result.error) {
+        return `Completed ${result.stepsCompleted} of ${stepsToGoDown} steps before encountering error: ${result.error}`;
+      } else {
+        const finalPos = bot.entity.position;
+        return `Successfully mined down ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}`;
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "move-horizontally-and-up-using-steps",
     "Mine up multiple steps. Good for going forwards-and-up.",
     {
@@ -1006,151 +943,20 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Timeout for digging in seconds (default: 3)"),
     },
-    async ({ allowMiningOf, stepsToGoUp, nextStepPos, digTimeout = 3 }): Promise<McpResponse> => {
-      try {
-        const nextStepVec = new Vec3(nextStepPos.x, nextStepPos.y, nextStepPos.z);
-        const result = await mineStepsUp(bot, stepsToGoUp, nextStepVec, allowMiningOf, digTimeout);
+    async ({ allowMiningOf, stepsToGoUp, nextStepPos, digTimeout = 3 }) => {
+      const nextStepVec = new Vec3(nextStepPos.x, nextStepPos.y, nextStepPos.z);
+      const result = await mineStepsUp(bot, stepsToGoUp, nextStepVec, allowMiningOf, digTimeout);
 
-        if (result.error) {
-          return createResponse(
-            `Completed ${result.stepsCompleted} of ${stepsToGoUp} steps before encountering error: ${result.error}`
-          );
-        } else {
-          const finalPos = bot.entity.position;
-          return createResponse(
-            `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}${getOptionalNewsFyi(bot)}`
-          );
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (result.error) {
+        return `Completed ${result.stepsCompleted} of ${stepsToGoUp} steps before encountering error: ${result.error}`;
+      } else {
+        const finalPos = bot.entity.position;
+        return `Successfully mined up ${result.stepsCompleted} step(s). Final position: ${formatBotPosition(finalPos)}`;
       }
     }
   );
-
-  // server.tool(
-  //   "deprecated-pathfind-and-move-or-dig-to",
-  //   "Move to a target position with auto-mining and optional pillar-up.",
-  //   {
-  //     x: z.number().describe("Target X coordinate"),
-  //     y: z.number().describe("Target Y coordinate"),
-  //     z: z.number().describe("Target Z coordinate"),
-  //     allowPillarUpWith: z
-  //       .array(z.string())
-  //       .optional()
-  //       .describe("Allow using these blocks to use for pillaring up (e.g., ['cobblestone', 'dirt']). Only used if target is above."),
-  //     allowMiningOf: z
-  //       .record(z.string(), z.array(z.string()))
-  //       .optional()
-  //       .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
-  //     allowDigDown: z
-  //       .boolean()
-  //       .optional()
-  //       .default(true)
-  //       .describe("Allow digging down when stuck (ensures there's solid ground 2 blocks below before digging)"),
-  //     maxIterations: z
-  //       .number()
-  //       .optional()
-  //       .default(10)
-  //       .describe("Maximum number of movement iterations"),
-  //   },
-  //   async ({ x, y, z, allowPillarUpWith = [], allowMiningOf = {}, allowDigDown = true, maxIterations = 10 }): Promise<McpResponse> => {
-  //     const startPos = bot.entity.position.clone();
-  //     const startTime = Date.now();
-  //     const target = new Vec3(x, y, z);
-  //     const DIG_TIMEOUT_SECONDS = 3;
-
-  //     try {
-  //       let totalBlocksMined = 0;
-  //       let totalPillaredBlocks = 0;
-  //       const visitedPositions = new Set<string>();
-  //       const stepLog: string[] = [];
-
-  //       for (let iteration = 0; iteration < maxIterations; iteration++) {
-  //         // Check if we've reached the target
-  //         const arrivalCheck = didArriveAtTarget(bot, target);
-  //         if (arrivalCheck.arrived) {
-  //           const totalDist = startPos.distanceTo(bot.entity.position);
-  //           const timeElapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  //           return createResponse(
-  //             `Reached target (${x}, ${y}, ${z}) from ${formatBotPosition(startPos)}. ` +
-  //             `Traveled ${totalDist.toFixed(1)} blocks in ${timeElapsed}s. Mined ${totalBlocksMined} blocks.\n` +
-  //             `Steps: ${stepLog.join('; ')}`
-  //           );
-  //         }
-
-  //         const posBeforeStep = bot.entity.position.clone();
-  //         const stepResult = await moveOneStep(
-  //           bot, target,
-  //           allowPillarUpWith, allowMiningOf, DIG_TIMEOUT_SECONDS, allowDigDown
-  //         );
-  //         const posAfterStep = bot.entity.position.clone();
-
-  //         // Log what happened in this step
-  //         const stepDesc = [];
-  //         if (stepResult.blocksMined > 0) stepDesc.push(`mined ${stepResult.blocksMined}`);
-  //         if (stepResult.pillaredUpBlocks > 0) stepDesc.push(`pillared ${stepResult.pillaredUpBlocks}`);
-  //         if (stepResult.movedBlocksCloser !== 0) stepDesc.push(`moved ${stepResult.movedBlocksCloser.toFixed(1)}b`);
-  //         if (stepResult.error) stepDesc.push(stepResult.error);
-  //         stepLog.push(`[${iteration+1}] ${formatBotPosition(posAfterStep)}: ${stepDesc.join(', ') || 'no action'}`);
-
-  //         totalBlocksMined += stepResult.blocksMined;
-  //         totalPillaredBlocks += stepResult.pillaredUpBlocks;
-
-  //         // Check for circular movement
-  //         const currentPos = bot.entity.position;
-  //         const posKey = `${Math.floor(currentPos.x)},${Math.floor(currentPos.y)},${Math.floor(currentPos.z)}`;
-  //         if (visitedPositions.has(posKey)) {
-  //           const distRemaining = currentPos.distanceTo(target);
-  //           const distTraveled = startPos.distanceTo(currentPos);
-  //           return createResponse(
-  //             `Detected circular movement: returned to position ${formatBotPosition(currentPos)} after ${iteration + 1} iteration(s). ` +
-  //             `Traveled ${distTraveled.toFixed(1)} blocks, mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-  //             `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-  //             `Steps: ${stepLog.join('; ')}\n` +
-  //             `Perhaps the pathfinder isn't working well for this situation (is it a reproducible bug?) and you should try a lower level tool.`
-  //           );
-  //         }
-  //         visitedPositions.add(posKey);
-
-  //         // Check if we made progress this iteration
-  //         const madeProgress = stepResult.blocksMined > 0 ||
-  //                             stepResult.movedBlocksCloser != 0 || // We might temporarily get further away, but at least we don't stay in place
-  //                             stepResult.pillaredUpBlocks > 0;
-
-  //         if (!madeProgress && iteration > 0) {
-  //           const distRemaining = bot.entity.position.distanceTo(target);
-  //           const distTraveled = startPos.distanceTo(bot.entity.position);
-
-  //           return createResponse(
-  //             `${stepResult.error || "Stuck at this iteration with no info from moveOneStep (probably a bug: info should normally be available)"}. ` +
-  //             `Progress after ${iteration} iteration(s): traveled ${distTraveled.toFixed(1)} blocks, ` +
-  //             `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ` +
-  //             `${distRemaining.toFixed(1)} blocks remaining to target.\n` +
-  //             `Steps: ${stepLog.join('; ')}`
-  //           );
-  //         }
-  //       }
-
-  //       // Max iterations reached - calculate progress stats (reusing same calculation as above)
-  //       const distRemaining = bot.entity.position.distanceTo(target);
-  //       const distTraveled = startPos.distanceTo(bot.entity.position);
-  //       return createResponse(
-  //         `Reached iteration limit (${maxIterations} iterations). Made progress: traveled ${distTraveled.toFixed(1)} blocks, ` +
-  //         `mined ${totalBlocksMined} blocks, pillared ${totalPillaredBlocks} blocks, ${distRemaining.toFixed(1)} blocks remaining to target. ` +
-  //         `Call move-to again to continue.\n` +
-  //         `Steps: ${stepLog.join('; ')}`
-  //       );
-
-  //     } catch (error) {
-  //       return createErrorResponse(error as Error);
-  //     } finally {
-  //       // Always clean up control states
-  //       bot.setControlState('forward', false);
-  //       bot.setControlState('jump', false);
-  //     }
-  //   }
-  // );
 }
+
 
 // ========== Inventory Management Tools ==========
 
