@@ -1877,8 +1877,9 @@ export function registerChatTools(server: McpServer, bot: Bot) {
       count: z
         .number()
         .optional()
+        .default(10)
         .describe(
-          "Number of recent messages to retrieve (default: 10, max: 100)"
+          "Max recent messages to retrieve"
         ),
     },
     async ({ count = 10 }): Promise<McpResponse> => {
