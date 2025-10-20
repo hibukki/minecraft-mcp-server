@@ -35,6 +35,7 @@ import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
+import { getDistanceToBlock } from "./getDistance.js";
 
 // ========== Type Definitions ==========
 
@@ -283,8 +284,16 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
           log("info", `Found crafting table at ${craftingTable.position}`);
         }
 
-        // Try to get craftable recipes directly
-        const craftableRecipes = bot.recipesFor(item.id, null, 1, craftingTable);
+        const distanceToCraftingTable = getDistanceToBlock(bot, craftingTable);
+
+        // Try to get craftable recipes directly with timeout
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error(`Crafting didn't start after 1 second, maybe the bot is too far from the crafting table? CraftingTable location: ${craftingTable?.position} CraftingTable distance: ${distanceToCraftingTable}`)), 1000);
+        });
+
+        const recipesPromise = Promise.resolve(bot.recipesFor(item.id, null, 1, craftingTable));
+
+        const craftableRecipes = await Promise.race([recipesPromise, timeoutPromise]);
         log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
 
         if (craftableRecipes.length === 0) {
@@ -1417,7 +1426,6 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
           const blockPos = new Vec3(x, y, z);
           const block = bot.blockAt(blockPos)!;
 
-          // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
           const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
           if (!result.success) {
