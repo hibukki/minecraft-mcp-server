@@ -1389,52 +1389,57 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
-    "dig-adjacent-block",
-    "Dig one block",
+    "dig-adjacent-blocks",
+    "Dig multiple blocks sequentially",
     {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
+      positions: z.array(z.object({
+        x: z.number(),
+        y: z.number(),
+        z: z.number(),
+      })).describe("Array of positions to dig, e.g., [{x: 1, y: 2, z: 3}, {x: 4, y: 5, z: 6}]"),
       timeoutSeconds: z
         .union([z.number(), z.string().transform(val => parseFloat(val))])
         .optional()
-        .describe("Timeout for digging in seconds (default: 3). Use longer timeout (e.g. 10) for hard blocks like iron ore with stone pickaxe"),
+        .describe("Timeout for digging each block in seconds (default: 3). Use longer timeout (e.g. 10) for hard blocks like iron ore with stone pickaxe"),
       allowedMiningToolsToMinedBlocks: z
         .record(z.string(), z.array(z.string()))
         .optional()
         .describe("Optional tool-to-blocks mapping for auto-equipping tools: {wooden_pickaxe: ['dirt'], diamond_pickaxe: ['stone', 'iron_ore']}. If not provided, will use currently equipped tool."),
     },
-    async ({ x, y, z, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }): Promise<McpResponse> => {
+    async ({ positions, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }): Promise<McpResponse> => {
       const digTimeout = timeoutSeconds ?? 3;
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+      let dugCount = 0;
+      let lastError: string | undefined;
 
-        if (!block || block.name === "air") {
+      try {
+        for (let i = 0; i < positions.length; i++) {
+          const { x, y, z } = positions[i];
+          const blockPos = new Vec3(x, y, z);
+          const block = bot.blockAt(blockPos)!;
+
+          // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
+          const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
+
+          if (!result.success) {
+            lastError = result.error || `Failed to mine block ${block.name} at (${x}, ${y}, ${z}) for unknown reason`;
+            break;
+          }
+
+          dugCount++;
+        }
+
+        const totalBlocks = positions.length;
+        if (dugCount === totalBlocks) {
+          return createResponse(`Dug ${dugCount} block${dugCount === 1 ? '' : 's'}` + getOptionalNewsFyi(bot));
+        } else {
           return createResponse(
-            `No block found at position (${x}, ${y}, ${z})`
+            `Dug ${dugCount}/${totalBlocks} blocks. Error on block ${dugCount + 1}: ${lastError}` + getOptionalNewsFyi(bot)
           );
         }
-
-        // Use tryMiningOneBlock if tools mapping provided, otherwise use current tool
-        const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
-
-        if (!result.success) {
-          return createResponse(result.error || "Failed to mine block");
-        }
-
-        let response = `Dug ${block.name} at (${x}, ${y}, ${z}). To pick up block, you might have to walk to it (or maybe there's a block in the way)`;
-        // Add light level warning if it's dark
-        const lightInfo = getLightLevel(block);
-        if (lightInfo && lightInfo.totalLight < 8) {
-          response += ` (fyi: effective light was ${lightInfo.totalLight}/15)`;
-        }
-        response += ` This mcp tool is slow, mining 1 block per call. To mine many blocks at once while navigating, use a different tool.`
-        response += getOptionalNewsFyi(bot);
-
-        return createResponse(response);
       } catch (error) {
-        return createErrorResponse(error as Error);
+        return createResponse(
+          `Dug ${dugCount}/${positions.length} blocks. Error on block ${dugCount + 1}: ${(error as Error).message}` + getOptionalNewsFyi(bot)
+        );
       }
     }
   );
