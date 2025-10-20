@@ -9,6 +9,7 @@ import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
 } from "./strafe.js";
+import { getDistanceToXYZ } from "./getDistance.js";
 
 export type MiningResult =
   | { success: true; blocksMined: number }
@@ -160,18 +161,6 @@ export function getBlocksAhead(
 }
 
 // ========== Basic Movement Helper Functions ==========
-
-/**
- * Get the distance from the bot to the target
- */
-export function getDistance(bot: Bot, target: Vec3): number {
-  return bot.entity.position.distanceTo(target);
-}
-
-export function getBlockCenter(block: Block | null): Vec3 {
-  const blockCorner = block!.position;
-  return new Vec3(blockCorner.x + 0.5, blockCorner.y + 0.5, blockCorner.z + 0.5)
-}
 
 /**
  * Get the next axis-aligned direction to move toward target
@@ -1073,7 +1062,7 @@ export async function moveOneStep(
 }> {
   logger.debug("Running moveOneStep")
   const currentPos = bot.entity.position;
-  const initialDistance = getDistance(bot, target);
+  const initialDistance = getDistanceToXYZ(bot, target);
 
   // If we're close horizontally (≤1 block in XZ), skip horizontal movement and focus on vertical movement
   const horizontalDist = Math.sqrt(
@@ -1110,7 +1099,7 @@ export async function moveOneStep(
     if (digDownResult.success) {
       return {
         blocksMined: digDownResult.blocksMined,
-        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        movedBlocksCloser: initialDistance - getDistanceToXYZ(bot, target),
         pillaredUpBlocks: 0
       };
     } else {
@@ -1141,7 +1130,7 @@ export async function moveOneStep(
   if (isBlockEmpty(blockAheadOfHead) && isBlockEmpty(blockAheadOfFeet)) {
     if (await walkForwardsIfPossible(bot, currentPos, direction)) {
       log.push("Walked")
-      const movedCloser = initialDistance - getDistance(bot, target);
+      const movedCloser = initialDistance - getDistanceToXYZ(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     }
     log.push("Walk: failed to walk forward even though path appears clear");
@@ -1157,7 +1146,7 @@ export async function moveOneStep(
       log.push("Mined.")
       return {
         blocksMined: mineResult.blocksMined,
-        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        movedBlocksCloser: initialDistance - getDistanceToXYZ(bot, target),
         pillaredUpBlocks: 0,
         error: log.join("; ")
       }
@@ -1171,7 +1160,7 @@ export async function moveOneStep(
     const jumpResult = await jumpOverSmallObstacleIfPossible(bot, currentPos, direction, target);
     if (jumpResult.success) {
       log.push("Jumped over object")
-      const movedCloser = initialDistance - getDistance(bot, target);
+      const movedCloser = initialDistance - getDistanceToXYZ(bot, target);
       return { blocksMined: 0, movedBlocksCloser: movedCloser, pillaredUpBlocks: 0 };
     } else {
       log.push(`Jump: ${jumpResult.error}`);
@@ -1198,7 +1187,7 @@ export async function moveOneStep(
       log.push("Dug down")
       return {
         blocksMined: digDownResult.blocksMined,
-        movedBlocksCloser: initialDistance - getDistance(bot, target),
+        movedBlocksCloser: initialDistance - getDistanceToXYZ(bot, target),
         pillaredUpBlocks: 0
       };
     } else {
@@ -1208,7 +1197,7 @@ export async function moveOneStep(
 
   return {
     blocksMined: 0,
-    movedBlocksCloser: initialDistance - getDistance(bot, target),
+    movedBlocksCloser: initialDistance - getDistanceToXYZ(bot, target),
     pillaredUpBlocks: 0,
     error: log.join("; ")
   };
