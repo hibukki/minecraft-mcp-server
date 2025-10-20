@@ -3,13 +3,11 @@ import { Vec3 } from "vec3";
 import { appendFileSync } from "fs";
 import {
   getBotAxisAlignedDirection,
-  type AxisAlignedDirection,
   type MineForwardResult,
-  getBlocksAhead,
   formatBotPosition,
-  isBlockEmpty,
   formatBlockPosition
 } from "./movement.js";
+import { type AxisAlignedDirection, getBlocksAhead, isBlockEmpty } from "./botLocation.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import logger from "./logger.js";
 

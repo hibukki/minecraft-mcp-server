@@ -8,6 +8,18 @@ export function getOptionalNewsFyi(bot: Bot): string {
   const state = getBotState(bot);
   const updates: string[] = [];
 
+  // Track bot location (feet position)
+  const botPos = bot.entity.position;
+  const currentFeetPos = { x: Math.floor(botPos.x), y: Math.floor(botPos.y), z: Math.floor(botPos.z) };
+
+  if (state.lastFeetPos !== undefined &&
+      (currentFeetPos.x !== state.lastFeetPos.x ||
+       currentFeetPos.y !== state.lastFeetPos.y ||
+       currentFeetPos.z !== state.lastFeetPos.z)) {
+    updates.push(`Bot feet at ${currentFeetPos.x}, ${currentFeetPos.y}, ${currentFeetPos.z}`);
+  }
+  state.lastFeetPos = currentFeetPos;
+
   const currentOxygen = bot.oxygenLevel;
   if (state.lastOxygen !== undefined && currentOxygen < state.lastOxygen) {
     updates.push(`Oxygen ${currentOxygen}/20`);

@@ -10,6 +10,7 @@ import {
   mineForwardsIfPossible
 } from "./strafe.js";
 import { getDistanceToXYZ } from "./getDistance.js";
+import { getBlocksAhead, isBlockEmpty, type AxisAlignedDirection } from "./botLocation.js";
 
 export type MiningResult =
   | { success: true; blocksMined: number }
@@ -32,15 +33,6 @@ type MineUpOneStepResult =
   | { success: true }
   | { success: false; error: string };
 
-// ========== Type Definitions ==========
-
-/** Axis-aligned direction vector (either x is 0 or z is 0, never both non-zero) */
-export type AxisAlignedDirection =
-  | { x: 1; y: 0; z: 0 }
-  | { x: -1; y: 0; z: 0 }
-  | { x: 0; y: 0; z: 1 }
-  | { x: 0; y: 0; z: -1 };
-
 // ========== Position Formatting Functions ==========
 
 export function formatBotPosition(pos: Vec3): string {
@@ -52,18 +44,6 @@ export function formatBlockPosition(pos: Vec3): string {
 }
 
 // ========== Block Checking Functions ==========
-
-/**
- * Check if a block is empty (air, water, lava, or passable blocks like flowers - things we can move through)
- */
-export function isBlockEmpty(block: Block | null): boolean {
-  if (!block) return true;
-  // Check for air, water, lava
-  if (block.name === 'air' || block.name === 'water' || block.name === 'lava') return true;
-  // Check for passable blocks (flowers, tall grass, etc.) which have no collision
-  if (block.boundingBox === 'empty') return true;
-  return false;
-}
 
 /**
  * Check if there's a clear line of sight from one position to another
@@ -142,22 +122,6 @@ export function isPathClear(
 
   // No direction worked - path is blocked, return all blocking blocks we found
   return { clear: false, blockingBlocks: blockingBlocksFoundSoFar };
-}
-
-/**
- * Get the blocks ahead of the bot's head and feet
- */
-export function getBlocksAhead(
-  bot: Bot,
-  currentPos: Vec3,
-  direction: AxisAlignedDirection
-): { blockAheadOfHead: Block; blockAheadOfFeet: Block,  blockAheadOfFeetClear: boolean, blockAheadOfHeadClear: boolean} {
-  const blockAheadOfFeet = bot.blockAt(currentPos.offset(direction.x, 0, direction.z).floor())!;
-  const blockAheadOfHead = bot.blockAt(currentPos.offset(direction.x, 1, direction.z).floor())!;
-  const blockAheadOfFeetClear = isBlockEmpty(blockAheadOfFeet);
-  const blockAheadOfHeadClear = isBlockEmpty(blockAheadOfHead);
-
-  return { blockAheadOfHead, blockAheadOfFeet, blockAheadOfFeetClear, blockAheadOfHeadClear };
 }
 
 // ========== Basic Movement Helper Functions ==========

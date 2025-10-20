@@ -15,7 +15,6 @@ import type { Entity } from "prismarine-entity";
 import {
   formatBotPosition,
   formatBlockPosition,
-  getBlocksAhead,
   getNextXZAlignedDirection,
   jumpOverSmallObstacleIfPossible,
   walkForwardsIfPossible,
@@ -31,6 +30,7 @@ import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
 } from "./strafe.js";
+import { getBlocksAhead } from "./botLocation.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
@@ -1303,6 +1303,7 @@ interface BotState {
   lastInventory?: Map<string, number>;
   lastEntities?: Array<{type: string, location: {x: number, y: number, z: number}}>;
   lastChatTimestamp?: number;
+  lastFeetPos?: {x: number, y: number, z: number};
 }
 
 const botStateMap = new WeakMap<Bot, BotState>();
