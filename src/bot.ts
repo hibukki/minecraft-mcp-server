@@ -36,6 +36,7 @@ import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock } from "./getDistance.js";
+import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 
 // ========== Type Definitions ==========
 
@@ -61,12 +62,6 @@ interface InventoryItem {
     remaining: number;
     max: number;
   };
-}
-
-interface StoredMessage {
-  timestamp: number;
-  username: string;
-  content: string;
 }
 
 // ========== Movement Result Types (Type-Safe) ==========
@@ -131,35 +126,6 @@ export function withToolLogging<T extends Record<string, unknown>>(
 }
 
 
-// ========== Message Storage ==========
-
-const MAX_STORED_MESSAGES = 100;
-
-class MessageStore {
-  private messages: StoredMessage[] = [];
-  private maxMessages = MAX_STORED_MESSAGES;
-
-  addMessage(username: string, content: string) {
-    const message: StoredMessage = {
-      timestamp: Date.now(),
-      username,
-      content,
-    };
-
-    this.messages.push(message);
-
-    if (this.messages.length > this.maxMessages) {
-      this.messages.shift();
-    }
-  }
-
-  getRecentMessages(count: number = 10): StoredMessage[] {
-    return this.messages.slice(-count);
-  }
-}
-
-// Global message store instance
-const messageStore = new MessageStore();
 
 export function setupBot(argv: Arguments): Bot {
   // Configure bot options based on command line arguments
@@ -1336,6 +1302,7 @@ interface BotState {
   lastDurability?: number;
   lastInventory?: Map<string, number>;
   lastEntities?: Array<{type: string, location: {x: number, y: number, z: number}}>;
+  lastChatTimestamp?: number;
 }
 
 const botStateMap = new WeakMap<Bot, BotState>();

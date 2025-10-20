@@ -1,6 +1,7 @@
 import type { Bot } from "mineflayer";
 import { getBotState, getEquippedItemDurability } from "./bot.js";
 import { logBotState } from "./logger.js";
+import { messageStore } from "./chatMessages.js";
 
 
 export function getOptionalNewsFyi(bot: Bot): string {
@@ -100,6 +101,18 @@ export function getOptionalNewsFyi(bot: Bot): string {
     }
   }
   state.lastEntities = currentEntities;
+
+  // Track new chat messages
+  const recentMessages = messageStore.getRecentMessages(10);
+  const lastCheckedTimestamp = state.lastChatTimestamp || 0;
+
+  const newMessages = recentMessages.filter(msg => msg.timestamp > lastCheckedTimestamp);
+
+  if (newMessages.length > 0) {
+    const messageDescriptions = newMessages.map(msg => `${msg.username}: "${msg.content}"`);
+    updates.push(`New chat messages: ${messageDescriptions.join(', ')}`);
+    state.lastChatTimestamp = Math.max(...newMessages.map(msg => msg.timestamp));
+  }
 
   if (updates.length === 0) {
     return '';
