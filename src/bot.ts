@@ -642,6 +642,92 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   );
 
   server.tool(
+    "swim-horizontally",
+    "Swim horizontally toward a target position. Enables jump/swim-up and moves forward in a loop, stopping forward movement when target is reached or overshot. Keeps jump enabled at the end in case still in water.",
+    {
+      targetX: z.number().describe("Target X coordinate"),
+      targetY: z.number().describe("Target Y coordinate"),
+      targetZ: z.number().describe("Target Z coordinate"),
+    },
+    async ({
+      targetX,
+      targetY,
+      targetZ,
+    }): Promise<McpResponse> => {
+      try {
+        const target = new Vec3(targetX, targetY, targetZ);
+        const startPos = bot.entity.position.clone();
+        const initialDistance = startPos.distanceTo(target);
+
+        // Enable jump/swim-up at the start
+        bot.setControlState("jump", true);
+
+        // Enable forward movement
+        bot.setControlState("forward", true);
+
+        const MAX_ATTEMPTS = 50;
+        let attempts = 0;
+        let closestDistance = initialDistance;
+
+        while (attempts < MAX_ATTEMPTS) {
+          // Look toward the target
+          const currentPos = bot.entity.position;
+          await bot.lookAt(target, false);
+
+          const currentDistance = currentPos.distanceTo(target);
+
+          // Check if we overshot (moved 0.5+ blocks further from closest we've been)
+          if (currentDistance > closestDistance + 0.5) {
+            const distanceTraveled = initialDistance - currentDistance;
+            bot.setControlState('forward', false);
+            return createResponse(
+              `Stopped forward movement: overshot target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+              `Distance to target: ${currentDistance.toFixed(1)} blocks. Closest was: ${closestDistance.toFixed(1)} blocks. ` +
+              `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
+            );
+          }
+
+          closestDistance = Math.min(closestDistance, currentDistance);
+
+          const horizontalDistance = Math.sqrt(
+            Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
+          );
+
+          // Check if we've reached the target
+          if (horizontalDistance <= 0.5) {
+            const distanceTraveled = initialDistance - currentDistance;
+            bot.setControlState('forward', false);
+            return createResponse(
+              `Reached target. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
+              `Final distance to target: ${currentDistance.toFixed(1)} blocks. ` +
+              `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
+            );
+          }
+
+          attempts++;
+          await new Promise(r => setTimeout(r, 50));
+        }
+
+        // Reached MAX_ATTEMPTS
+        const endPos = bot.entity.position;
+        const distanceTraveled = startPos.distanceTo(endPos);
+        const distanceRemaining = endPos.distanceTo(target);
+        bot.setControlState('forward', false);
+
+        return createResponse(
+          `Reached iteration limit (${MAX_ATTEMPTS} attempts). Traveled ${distanceTraveled.toFixed(1)} blocks. ` +
+          `Remaining: ${distanceRemaining.toFixed(1)} blocks. Call again to continue. ` +
+          `Jump/swim-up still enabled.${getOptionalNewsFyi(bot)}`
+        );
+      } catch (error) {
+        bot.setControlState('forward', false);
+        // Keep jump enabled even on error
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+
+  server.tool(
     "move-up-by-pillaring",
     "Build a pillar by jumping and placing blocks below. Good for trying to go way up.",
     {
