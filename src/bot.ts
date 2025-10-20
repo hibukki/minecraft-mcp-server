@@ -2,6 +2,7 @@
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { z } from "zod";
 import mineflayer from "mineflayer";
 import type { Bot } from "mineflayer";
@@ -124,11 +125,13 @@ function addServerTool<TSchema extends Record<string, z.ZodTypeAny>>(
   schema: TSchema,
   handler: (params: InferSchemaParams<TSchema>) => Promise<string>
 ) {
+  // TypeScript can't match our generic TSchema to server.tool's overloads
+  // But params are still fully type-safe for the handler
   (server.tool as any)(
     name,
     description,
     schema,
-    async (params: any) => {
+    async (params: InferSchemaParams<TSchema>): Promise<CallToolResult> => {
       try {
         const result = await handler(params);
         return createResponse(result + getOptionalNewsFyi(bot));
