@@ -961,74 +961,66 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 // ========== Inventory Management Tools ==========
 
 export function registerInventoryTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "list-inventory",
     "List all items in the bot's inventory",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        const itemList: InventoryItem[] = items.map((item) => {
-          const inventoryItem: InventoryItem = {
-            name: item.name,
-            count: item.count,
-            slot: item.slot,
+    async () => {
+      const items = bot.inventory.items();
+      const itemList: InventoryItem[] = items.map((item) => {
+        const inventoryItem: InventoryItem = {
+          name: item.name,
+          count: item.count,
+          slot: item.slot,
+        };
+
+        if (item.maxDurability != null && item.durabilityUsed != null) {
+          inventoryItem.durability = {
+            remaining: item.maxDurability - item.durabilityUsed,
+            max: item.maxDurability,
           };
-
-          if (item.maxDurability != null && item.durabilityUsed != null) {
-            inventoryItem.durability = {
-              remaining: item.maxDurability - item.durabilityUsed,
-              max: item.maxDurability,
-            };
-          }
-
-          return inventoryItem;
-        });
-
-        if (items.length === 0) {
-          return createResponse("Inventory is empty");
         }
 
-        let inventoryText = `Found ${items.length} items in inventory:\n\n`;
-        itemList.forEach((item) => {
-          let itemText = `- ${item.name} (x${item.count}) in slot ${item.slot}`;
-          if (item.durability) {
-            itemText += ` [durability: ${item.durability.remaining}/${item.durability.max}]`;
-          }
-          inventoryText += itemText + '\n';
-        });
+        return inventoryItem;
+      });
 
-        return createResponse(inventoryText);
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (items.length === 0) {
+        return "Inventory is empty";
       }
+
+      let inventoryText = `Found ${items.length} items in inventory:\n\n`;
+      itemList.forEach((item) => {
+        let itemText = `- ${item.name} (x${item.count}) in slot ${item.slot}`;
+        if (item.durability) {
+          itemText += ` [durability: ${item.durability.remaining}/${item.durability.max}]`;
+        }
+        inventoryText += itemText + '\n';
+      });
+
+      return inventoryText;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "find-item",
     "Find a specific item in the bot's inventory",
     {
       nameOrType: z.string().describe("Name or type of item to find"),
     },
-    async ({ nameOrType }): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        const item = items.find((item) =>
-          item.name.includes(nameOrType.toLowerCase())
-        );
+    async ({ nameOrType }) => {
+      const items = bot.inventory.items();
+      const item = items.find((item) =>
+        item.name.includes(nameOrType.toLowerCase())
+      );
 
-        if (item) {
-          return createResponse(
-            `Found ${item.count} ${item.name} in inventory (slot ${item.slot})`
-          );
-        } else {
-          return createResponse(
-            `Couldn't find any item matching '${nameOrType}' in inventory`
-          );
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (item) {
+        return `Found ${item.count} ${item.name} in inventory (slot ${item.slot})`;
+      } else {
+        return `Couldn't find any item matching '${nameOrType}' in inventory`;
       }
     }
   );
@@ -1064,112 +1056,99 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
 // ========== Item Action Tools ==========
 
 export function registerItemActionTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "drop-item",
     "Drop items from inventory",
     {
       itemName: z.string().describe("Name of the item to drop"),
       count: z.number().optional().default(1).describe("Number of items to drop (default: 1)"),
     },
-    async ({ itemName, count }): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        const item = items.find(i => i.name === itemName);
+    async ({ itemName, count }) => {
+      const items = bot.inventory.items();
+      const item = items.find(i => i.name === itemName);
 
-        if (!item) {
-          const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-          return createResponse(
-            `Cannot drop ${itemName}: not found in inventory. Inventory: ${inventory}`
-          );
-        }
-
-        if (item.count < count) {
-          return createResponse(
-            `Cannot drop ${count}x ${itemName}: only have ${item.count}`
-          );
-        }
-
-        await bot.toss(item.type, null, count);
-        return createResponse(`Dropped ${count}x ${itemName}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!item) {
+        const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
+        return `Cannot drop ${itemName}: not found in inventory. Inventory: ${inventory}`;
       }
+
+      if (item.count < count) {
+        return `Cannot drop ${count}x ${itemName}: only have ${item.count}`;
+      }
+
+      await bot.toss(item.type, null, count);
+      return `Dropped ${count}x ${itemName}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "eat-food",
     "Consume food to restore hunger",
     {
       itemName: z.string().optional().describe("Name of the food item to eat (auto-select if not provided)"),
     },
-    async ({ itemName }): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        let foodItem;
+    async ({ itemName }) => {
+      const items = bot.inventory.items();
+      let foodItem;
 
-        if (itemName) {
-          foodItem = items.find(i => i.name === itemName);
-          if (!foodItem) {
-            const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-            return createResponse(
-              `Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`
-            );
-          }
-          if (!(foodItem as any).foodPoints) {
-            return createResponse(`Cannot eat ${itemName}: not a food item`);
-          }
-        } else {
-          foodItem = items.find(i => (i as any).foodPoints);
-          if (!foodItem) {
-            return createResponse(`Cannot eat: no food items in inventory`);
-          }
+      if (itemName) {
+        foodItem = items.find(i => i.name === itemName);
+        if (!foodItem) {
+          const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
+          return `Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`;
         }
-
-        await bot.equip(foodItem, 'hand');
-        await bot.consume();
-        return createResponse(`Ate ${foodItem.name}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+        if (!(foodItem as any).foodPoints) {
+          return `Cannot eat ${itemName}: not a food item`;
+        }
+      } else {
+        foodItem = items.find(i => (i as any).foodPoints);
+        if (!foodItem) {
+          return `Cannot eat: no food items in inventory`;
+        }
       }
+
+      await bot.equip(foodItem, 'hand');
+      await bot.consume();
+      return `Ate ${foodItem.name}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "activate-item",
     "Use currently held item (e.g., shoot bow, raise shield, throw snowball, drink potion)",
     {
       offhand: z.boolean().optional().default(false).describe("Use offhand item instead of main hand"),
     },
-    async ({ offhand }): Promise<McpResponse> => {
-      try {
-        const heldItem = bot.heldItem;
-        if (!heldItem) {
-          return createResponse(`No item held in ${offhand ? 'offhand' : 'main hand'}`);
-        }
-
-        bot.activateItem(offhand);
-        return createResponse(`Activated ${heldItem.name}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async ({ offhand }) => {
+      const heldItem = bot.heldItem;
+      if (!heldItem) {
+        const hand = offhand ? 'offhand' : 'main hand';
+        return `No item held in ${hand}`;
       }
+
+      bot.activateItem(offhand);
+      return `Activated ${heldItem.name}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "write-book",
     "Write content to a book and quill",
     {
       slot: z.number().describe("Inventory slot containing the book"),
       pages: z.array(z.string()).describe("Array of page contents"),
     },
-    async ({ slot, pages }): Promise<McpResponse> => {
-      try {
-        await bot.writeBook(slot, pages);
-        return createResponse(`Wrote ${pages.length} pages to book in slot ${slot}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async ({ slot, pages }) => {
+      await bot.writeBook(slot, pages);
+      return `Wrote ${pages.length} pages to book in slot ${slot}`;
     }
   );
 }
@@ -1177,7 +1156,9 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
 // ========== Container Tools ==========
 
 export function registerContainerTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "chest-open",
     "Open a chest at the specified position",
     {
@@ -1185,33 +1166,31 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!block.name.includes('chest')) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not a chest`);
-        }
-
-        const chest = await bot.openChest(block);
-        const items = chest.containerItems();
-        const itemsSummary = items.length > 0
-          ? items.map(i => `${i.name}(x${i.count})`).join(', ')
-          : 'empty';
-
-        return createResponse(`Opened chest at (${x}, ${y}, ${z}). Contents: ${itemsSummary}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!block.name.includes('chest')) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a chest`;
+      }
+
+      const chest = await bot.openChest(block);
+      const items = chest.containerItems();
+      const itemsSummary = items.length > 0
+        ? items.map(i => `${i.name}(x${i.count})`).join(', ')
+        : 'empty';
+
+      return `Opened chest at (${x}, ${y}, ${z}). Contents: ${itemsSummary}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "furnace-open",
     "Open furnace interface for direct interaction",
     {
@@ -1219,28 +1198,26 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!block.name.includes('furnace')) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not a furnace`);
-        }
-
-        const furnace = await bot.openFurnace(block);
-        return createResponse(`Opened furnace at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!block.name.includes('furnace')) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a furnace`;
+      }
+
+      await bot.openFurnace(block);
+      return `Opened furnace at (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "enchantment-table-open",
     "Open enchantment table interface",
     {
@@ -1248,28 +1225,26 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!block.name.includes('enchanting_table')) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not an enchanting table`);
-        }
-
-        const enchantmentTable = await bot.openEnchantmentTable(block);
-        return createResponse(`Opened enchantment table at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!block.name.includes('enchanting_table')) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not an enchanting table`;
+      }
+
+      await bot.openEnchantmentTable(block);
+      return `Opened enchantment table at (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "anvil-open",
     "Open anvil for repairs and renaming",
     {
@@ -1277,28 +1252,26 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!block.name.includes('anvil')) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not an anvil`);
-        }
-
-        const anvil = await bot.openAnvil(block);
-        return createResponse(`Opened anvil at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!block.name.includes('anvil')) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not an anvil`;
+      }
+
+      await bot.openAnvil(block);
+      return `Opened anvil at (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "transfer-items",
     "Transfer items between inventory slots or containers",
     {
@@ -1307,37 +1280,29 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       fromSlot: z.number().optional().describe("Source slot number"),
       toSlot: z.number().optional().describe("Destination slot number"),
     },
-    async ({ itemName, count, fromSlot, toSlot }): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        const item = items.find(i => i.name === itemName);
+    async ({ itemName, count, fromSlot, toSlot }) => {
+      const items = bot.inventory.items();
+      const item = items.find(i => i.name === itemName);
 
-        if (!item) {
-          const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-          return createResponse(
-            `Cannot transfer ${itemName}: not found in inventory. Inventory: ${inventory}`
-          );
-        }
-
-        if (item.count < count) {
-          return createResponse(
-            `Cannot transfer ${count}x ${itemName}: only have ${item.count}`
-          );
-        }
-
-        await bot.transfer({
-          window: bot.currentWindow || bot.inventory,
-          itemType: item.type,
-          metadata: null,
-          sourceStart: fromSlot,
-          sourceEnd: fromSlot,
-          destStart: toSlot,
-        } as any);
-
-        return createResponse(`Transferred ${count}x ${itemName}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!item) {
+        const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
+        return `Cannot transfer ${itemName}: not found in inventory. Inventory: ${inventory}`;
       }
+
+      if (item.count < count) {
+        return `Cannot transfer ${count}x ${itemName}: only have ${item.count}`;
+      }
+
+      await bot.transfer({
+        window: bot.currentWindow || bot.inventory,
+        itemType: item.type,
+        metadata: null,
+        sourceStart: fromSlot,
+        sourceEnd: fromSlot,
+        destStart: toSlot,
+      } as any);
+
+      return `Transferred ${count}x ${itemName}`;
     }
   );
 }
@@ -1345,7 +1310,9 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
 // ========== Survival Tools ==========
 
 export function registerSurvivalTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "bed-sleep",
     "Sleep in a bed to skip night and set spawn point",
     {
@@ -1353,75 +1320,65 @@ export function registerSurvivalTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!bot.isABed(block)) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not a bed`);
-        }
-
-        await bot.sleep(block);
-        return createResponse(`Sleeping in bed at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!bot.isABed(block)) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a bed`;
+      }
+
+      await bot.sleep(block);
+      return `Sleeping in bed at (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "bed-wake",
     "Wake up from bed",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        if (!bot.isSleeping) {
-          return createResponse(`Not currently sleeping`);
-        }
-
-        await bot.wake();
-        return createResponse(`Woke up from bed` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async () => {
+      if (!bot.isSleeping) {
+        return `Not currently sleeping`;
       }
+
+      await bot.wake();
+      return `Woke up from bed`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "fish",
     "Start fishing (requires fishing rod equipped)",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const heldItem = bot.heldItem;
-        if (!heldItem || !heldItem.name.includes('fishing_rod')) {
-          return createResponse(`No fishing rod equipped in main hand`);
-        }
-
-        await bot.fish();
-        return createResponse(`Caught a fish` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async () => {
+      const heldItem = bot.heldItem;
+      if (!heldItem || !heldItem.name.includes('fishing_rod')) {
+        return `No fishing rod equipped in main hand`;
       }
+
+      await bot.fish();
+      return `Caught a fish`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "elytra-fly",
     "Activate elytra flight",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        await bot.elytraFly();
-        return createResponse(`Activated elytra flight` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      await bot.elytraFly();
+      return `Activated elytra flight`;
     }
   );
 }
@@ -1498,7 +1455,9 @@ export function getBotState(bot: Bot): BotState {
 }
 
 export function registerBlockTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "place-block",
     "Place a block at the specified position",
     {
@@ -1507,63 +1466,55 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ blockName, x, y, z }): Promise<McpResponse> => {
-      try {
-        // Find and equip the block
-        const blockItem = bot.inventory.items().find(item => item.name === blockName);
-        if (!blockItem) {
-          const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-          return createResponse(
-            `Cannot place ${blockName}: not found in inventory. Inventory: ${inventory}`
-          );
-        }
+    async ({ blockName, x, y, z }) => {
+      // Find and equip the block
+      const blockItem = bot.inventory.items().find(item => item.name === blockName);
+      if (!blockItem) {
+        const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
+        return `Cannot place ${blockName}: not found in inventory. Inventory: ${inventory}`;
+      }
 
-        await bot.equip(blockItem, 'hand');
+      await bot.equip(blockItem, 'hand');
 
-        const placePos = new Vec3(x, y, z);
-        const blockAtPos = bot.blockAt(placePos);
-        if (blockAtPos && blockAtPos.name !== "air") {
-          return createResponse(
-            `There's already a block (${blockAtPos.name}) at (${x}, ${y}, ${z})`
-          );
-        }
+      const placePos = new Vec3(x, y, z);
+      const blockAtPos = bot.blockAt(placePos);
+      if (blockAtPos && blockAtPos.name !== "air") {
+        return `There's already a block (${blockAtPos.name}) at (${x}, ${y}, ${z})`;
+      }
 
-        // Try all 6 faces
-        const faces: Array<{ name: string; vec: Vec3 }> = [
-          { name: "down", vec: new Vec3(0, -1, 0) },
-          { name: "up", vec: new Vec3(0, 1, 0) },
-          { name: "north", vec: new Vec3(0, 0, -1) },
-          { name: "south", vec: new Vec3(0, 0, 1) },
-          { name: "west", vec: new Vec3(-1, 0, 0) },
-          { name: "east", vec: new Vec3(1, 0, 0) },
-        ];
+      // Try all 6 faces
+      const faces: Array<{ name: string; vec: Vec3 }> = [
+        { name: "down", vec: new Vec3(0, -1, 0) },
+        { name: "up", vec: new Vec3(0, 1, 0) },
+        { name: "north", vec: new Vec3(0, 0, -1) },
+        { name: "south", vec: new Vec3(0, 0, 1) },
+        { name: "west", vec: new Vec3(-1, 0, 0) },
+        { name: "east", vec: new Vec3(1, 0, 0) },
+      ];
 
-        for (const face of faces) {
-          const refBlock = bot.blockAt(placePos.plus(face.vec));
-          if (refBlock && refBlock.name !== "air" /* && bot.canSeeBlock(refBlock) */) {
-            try {
-              await bot.lookAt(placePos, true);
-              await bot.placeBlock(refBlock, face.vec.scaled(-1));
-              return createResponse(`Placed block at (${x}, ${y}, ${z}) using ${face.name} face`);
-            } catch {
-              // Try next face
-              continue;
-            }
+      for (const face of faces) {
+        const refBlock = bot.blockAt(placePos.plus(face.vec));
+        if (refBlock && refBlock.name !== "air" /* && bot.canSeeBlock(refBlock) */) {
+          try {
+            await bot.lookAt(placePos, true);
+            await bot.placeBlock(refBlock, face.vec.scaled(-1));
+            return `Placed block at (${x}, ${y}, ${z}) using ${face.name} face`;
+          } catch {
+            // Try next face
+            continue;
           }
         }
-
-        const dist = bot.entity.position.distanceTo(placePos);
-        return createResponse(
-          `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found` +
-          (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : '')
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
       }
+
+      const dist = bot.entity.position.distanceTo(placePos);
+      return `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found` +
+        (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : '');
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "dig-adjacent-blocks",
     "Dig multiple blocks sequentially",
     {
@@ -1581,44 +1532,38 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Optional tool-to-blocks mapping for auto-equipping tools: {wooden_pickaxe: ['dirt'], diamond_pickaxe: ['stone', 'iron_ore']}. If not provided, will use currently equipped tool."),
     },
-    async ({ positions, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }): Promise<McpResponse> => {
+    async ({ positions, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }) => {
       const digTimeout = timeoutSeconds ?? 3;
       let dugCount = 0;
       let lastError: string | undefined;
 
-      try {
-        for (let i = 0; i < positions.length; i++) {
-          const { x, y, z } = positions[i];
-          const blockPos = new Vec3(x, y, z);
-          const block = bot.blockAt(blockPos)!;
+      for (let i = 0; i < positions.length; i++) {
+        const { x, y, z } = positions[i];
+        const blockPos = new Vec3(x, y, z);
+        const block = bot.blockAt(blockPos)!;
 
-          const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
+        const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
-          if (!result.success) {
-            lastError = result.error || `Failed to mine block ${block.name} at (${x}, ${y}, ${z}) for unknown reason`;
-            break;
-          }
-
-          dugCount++;
+        if (!result.success) {
+          lastError = result.error || `Failed to mine block ${block.name} at (${x}, ${y}, ${z}) for unknown reason`;
+          break;
         }
 
-        const totalBlocks = positions.length;
-        if (dugCount === totalBlocks) {
-          return createResponse(`Dug ${dugCount} block${dugCount === 1 ? '' : 's'}` + getOptionalNewsFyi(bot));
-        } else {
-          return createResponse(
-            `Dug ${dugCount}/${totalBlocks} blocks. Error on block ${dugCount + 1}: ${lastError}` + getOptionalNewsFyi(bot)
-          );
-        }
-      } catch (error) {
-        return createResponse(
-          `Dug ${dugCount}/${positions.length} blocks. Error on block ${dugCount + 1}: ${(error as Error).message}` + getOptionalNewsFyi(bot)
-        );
+        dugCount++;
+      }
+
+      const totalBlocks = positions.length;
+      if (dugCount === totalBlocks) {
+        return `Dug ${dugCount} block${dugCount === 1 ? '' : 's'}`;
+      } else {
+        return `Dug ${dugCount}/${totalBlocks} blocks. Error on block ${dugCount + 1}: ${lastError}`;
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "dig-directly-down",
     "Dig straight down by mining blocks directly below the bot. Good if the target is far down.",
     {
@@ -1636,29 +1581,25 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         .default(3)
         .describe("Timeout for digging each block in seconds (default: 3)"),
     },
-    async ({ blocksToDigDown = 1, allowMiningOf, digTimeout = 3 }): Promise<McpResponse> => {
-      try {
-        const startPos = bot.entity.position.clone();
-        const result = await digDirectlyDownIfPossible(bot, blocksToDigDown, allowMiningOf, digTimeout);
+    async ({ blocksToDigDown = 1, allowMiningOf, digTimeout = 3 }) => {
+      const startPos = bot.entity.position.clone();
+      const result = await digDirectlyDownIfPossible(bot, blocksToDigDown, allowMiningOf, digTimeout);
 
-        if (result.success) {
-          const endPos = bot.entity.position;
-          const verticalDist = startPos.y - endPos.y;
-          return createResponse(
-            `Successfully dug down ${result.blocksMined} block(s). ` +
-            `Descended ${verticalDist.toFixed(1)} blocks. ` +
-            `Now at position ${formatBotPosition(endPos)}. +${getOptionalNewsFyi}`
-          );
-        } else {
-          return createResponse(result.error || `Unknown error while digging down. Dug down ${result.blocksMined} blocks. +${getOptionalNewsFyi}`);
-        }
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (result.success) {
+        const endPos = bot.entity.position;
+        const verticalDist = startPos.y - endPos.y;
+        return `Successfully dug down ${result.blocksMined} block(s). ` +
+          `Descended ${verticalDist.toFixed(1)} blocks. ` +
+          `Now at position ${formatBotPosition(endPos)}.`;
+      } else {
+        return result.error || `Unknown error while digging down. Dug down ${result.blocksMined} blocks.`;
       }
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "get-block-info",
     "Get information about a block at the specified position",
     {
@@ -1666,29 +1607,23 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(
-            `No block information found at position (${x}, ${y}, ${z})`
-          );
-        }
-
-        const lightInfo = getBlockLightLevelFormatted(block);
-
-        return createResponse(
-          `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z}), ${lightInfo}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block information found at position (${x}, ${y}, ${z})`;
       }
+
+      const lightInfo = getBlockLightLevelFormatted(block);
+
+      return `Found ${block.name} (type: ${block.type}) at position (${block.position.x}, ${block.position.y}, ${block.position.z}), ${lightInfo}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "get-blocks-info",
     "Get information about multiple blocks at specified positions",
     {
@@ -1698,30 +1633,28 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         z: z.number()
       })).describe("Array of positions to check, e.g., [{x: 1, y: 2, z: 3}, {x: 4, y: 5, z: 6}]"),
     },
-    async ({ positions }): Promise<McpResponse> => {
-      try {
-        let result = `Block information for ${positions.length} position(s):\n\n`;
+    async ({ positions }) => {
+      let result = `Block information for ${positions.length} position(s):\n\n`;
 
-        for (const pos of positions) {
-          const blockPos = new Vec3(pos.x, pos.y, pos.z);
-          const block = bot.blockAt(blockPos);
+      for (const pos of positions) {
+        const blockPos = new Vec3(pos.x, pos.y, pos.z);
+        const block = bot.blockAt(blockPos);
 
-          if (!block) {
-            result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
-          } else {
-            const lightInfo = getBlockLightLevelFormatted(block);
-            result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
-          }
+        if (!block) {
+          result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
+        } else {
+          const lightInfo = getBlockLightLevelFormatted(block);
+          result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
         }
-
-        return createResponse(result.trim());
-      } catch (error) {
-        return createErrorResponse(error as Error);
       }
+
+      return result.trim();
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "find-blocks-by-type",
     "Find blocks of a specific type (sorted by distance, closest first)",
     {
@@ -1739,43 +1672,37 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       blockType,
       maxDistance = 16,
       maxResults = 5,
-    }): Promise<McpResponse> => {
-      try {
-        const mcData = minecraftData(bot.version);
-        const blocksByName = mcData.blocksByName;
+    }) => {
+      const mcData = minecraftData(bot.version);
+      const blocksByName = mcData.blocksByName;
 
-        if (!blocksByName[blockType]) {
-          return createResponse(`Unknown block type: ${blockType}`);
-        }
-
-        const blockId = blocksByName[blockType].id;
-
-        const positions = bot.findBlocks({
-          matching: blockId,
-          maxDistance: maxDistance,
-          count: maxResults,
-        });
-
-        if (positions.length === 0) {
-          return createResponse(
-            `No ${blockType} found within ${maxDistance} blocks`
-          );
-        }
-
-        const positionStrings = positions.map(
-          (pos) => `(${pos.x}, ${pos.y}, ${pos.z})`
-        );
-
-        return createResponse(
-          `Found ${positions.length} ${blockType} block(s):\n${positionStrings.join("\n")}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!blocksByName[blockType]) {
+        return `Unknown block type: ${blockType}`;
       }
+
+      const blockId = blocksByName[blockType].id;
+
+      const positions = bot.findBlocks({
+        matching: blockId,
+        maxDistance: maxDistance,
+        count: maxResults,
+      });
+
+      if (positions.length === 0) {
+        return `No ${blockType} found within ${maxDistance} blocks`;
+      }
+
+      const positionStrings = positions.map(
+        (pos) => `(${pos.x}, ${pos.y}, ${pos.z})`
+      );
+
+      return `Found ${positions.length} ${blockType} block(s):\n${positionStrings.join("\n")}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "get-nearby-block-types",
     "Get all unique block types and entity types in the nearby area with counts and closest distance",
     {
@@ -1792,121 +1719,117 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Limit on number of unique block types to return (default: 20)"),
     },
-    async ({ maxDistanceSideways = 16, maxDistanceUpDown = 8, maxBlockTypes = 20 }): Promise<McpResponse> => {
-      try {
-        const botPos = bot.entity.position;
+    async ({ maxDistanceSideways = 16, maxDistanceUpDown = 8, maxBlockTypes = 20 }) => {
+      const botPos = bot.entity.position;
 
-        // Define blocks to ignore (common/boring blocks)
-        const boringBlocks = new Set([
-          'air', 'stone', 'dirt', 'grass_block', 'water', 'lava',
-          'bedrock', 'cave_air', 'void_air'
-        ]);
+      // Define blocks to ignore (common/boring blocks)
+      const boringBlocks = new Set([
+        'air', 'stone', 'dirt', 'grass_block', 'water', 'lava',
+        'bedrock', 'cave_air', 'void_air'
+      ]);
 
-        // Map to track closest instance and count of each block type
-        const blockTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
+      // Map to track closest instance and count of each block type
+      const blockTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
 
-        // Search for interesting blocks
-        const minPos = botPos.offset(-maxDistanceSideways, -maxDistanceUpDown, -maxDistanceSideways);
-        const maxPos = botPos.offset(maxDistanceSideways, maxDistanceUpDown, maxDistanceSideways);
+      // Search for interesting blocks
+      const minPos = botPos.offset(-maxDistanceSideways, -maxDistanceUpDown, -maxDistanceSideways);
+      const maxPos = botPos.offset(maxDistanceSideways, maxDistanceUpDown, maxDistanceSideways);
 
-        for (let x = Math.floor(minPos.x); x <= Math.floor(maxPos.x); x++) {
-          for (let y = Math.floor(minPos.y); y <= Math.floor(maxPos.y); y++) {
-            for (let z = Math.floor(minPos.z); z <= Math.floor(maxPos.z); z++) {
-              const blockPos = new Vec3(x, y, z);
-              const block = bot.blockAt(blockPos);
+      for (let x = Math.floor(minPos.x); x <= Math.floor(maxPos.x); x++) {
+        for (let y = Math.floor(minPos.y); y <= Math.floor(maxPos.y); y++) {
+          for (let z = Math.floor(minPos.z); z <= Math.floor(maxPos.z); z++) {
+            const blockPos = new Vec3(x, y, z);
+            const block = bot.blockAt(blockPos);
 
-              if (!block || boringBlocks.has(block.name)) continue;
+            if (!block || boringBlocks.has(block.name)) continue;
 
-              const distance = botPos.distanceTo(blockPos);
-              const existing = blockTypes.get(block.name);
+            const distance = botPos.distanceTo(blockPos);
+            const existing = blockTypes.get(block.name);
 
-              if (!existing) {
-                blockTypes.set(block.name, { distance, position: blockPos, count: 1 });
-              } else {
-                existing.count++;
-                if (distance < existing.distance) {
-                  existing.distance = distance;
-                  existing.position = blockPos;
-                }
+            if (!existing) {
+              blockTypes.set(block.name, { distance, position: blockPos, count: 1 });
+            } else {
+              existing.count++;
+              if (distance < existing.distance) {
+                existing.distance = distance;
+                existing.position = blockPos;
               }
             }
           }
         }
+      }
 
-        // Search for entities
-        const entityTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
+      // Search for entities
+      const entityTypes = new Map<string, { distance: number; position: Vec3; count: number }>();
 
-        for (const entityId in bot.entities) {
-          const entity = bot.entities[entityId];
+      for (const entityId in bot.entities) {
+        const entity = bot.entities[entityId];
 
-          // Skip the bot itself
-          if (entity === bot.entity) continue;
+        // Skip the bot itself
+        if (entity === bot.entity) continue;
 
-          const distance = botPos.distanceTo(entity.position);
+        const distance = botPos.distanceTo(entity.position);
 
-          // Check if within search radius
-          const horizontalDist = Math.sqrt(
-            Math.pow(entity.position.x - botPos.x, 2) +
-            Math.pow(entity.position.z - botPos.z, 2)
-          );
-          const verticalDist = Math.abs(entity.position.y - botPos.y);
+        // Check if within search radius
+        const horizontalDist = Math.sqrt(
+          Math.pow(entity.position.x - botPos.x, 2) +
+          Math.pow(entity.position.z - botPos.z, 2)
+        );
+        const verticalDist = Math.abs(entity.position.y - botPos.y);
 
-          if (horizontalDist > maxDistanceSideways || verticalDist > maxDistanceUpDown) continue;
+        if (horizontalDist > maxDistanceSideways || verticalDist > maxDistanceUpDown) continue;
 
-          const entityName = entity.name || (entity as any).username || entity.type || 'unknown';
-          const existing = entityTypes.get(entityName);
+        const entityName = entity.name || (entity as any).username || entity.type || 'unknown';
+        const existing = entityTypes.get(entityName);
 
-          if (!existing) {
-            entityTypes.set(entityName, { distance, position: entity.position, count: 1 });
-          } else {
-            existing.count++;
-            if (distance < existing.distance) {
-              existing.distance = distance;
-              existing.position = entity.position;
-            }
+        if (!existing) {
+          entityTypes.set(entityName, { distance, position: entity.position, count: 1 });
+        } else {
+          existing.count++;
+          if (distance < existing.distance) {
+            existing.distance = distance;
+            existing.position = entity.position;
           }
         }
-
-        // Combine blocks and entities
-        const allItems: Array<{ type: string; distance: number; position: Vec3; count: number; category: 'block' | 'entity' }> = [];
-
-        blockTypes.forEach((data, name) => {
-          allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'block' });
-        });
-
-        entityTypes.forEach((data, name) => {
-          allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'entity' });
-        });
-
-        // Sort by distance (closest first) and limit results
-        allItems.sort((a, b) => a.distance - b.distance);
-        const limitedItems = allItems.slice(0, maxBlockTypes);
-
-        if (limitedItems.length === 0) {
-          return createResponse(
-            `No interesting blocks or entities found within ${maxDistanceSideways} blocks horizontally and ${maxDistanceUpDown} blocks vertically.`
-          );
-        }
-
-        let output = `Found ${limitedItems.length} nearby items (of ${allItems.length} total):\n\n`;
-        output += `Entity/Block;Name;Count;Closest_Distance;Closest_location(x,y,z)\n`;
-
-        limitedItems.forEach((item) => {
-          const pos = item.position;
-          const typeMarker = item.category === 'entity' ? 'E' : 'B';
-          output += `${typeMarker};${item.type};${item.count};${item.distance.toFixed(1)};(${pos.x},${pos.y},${pos.z})\n`;
-        });
-
-        output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
-
-        return createResponse(output.trim());
-      } catch (error) {
-        return createErrorResponse(error as Error);
       }
+
+      // Combine blocks and entities
+      const allItems: Array<{ type: string; distance: number; position: Vec3; count: number; category: 'block' | 'entity' }> = [];
+
+      blockTypes.forEach((data, name) => {
+        allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'block' });
+      });
+
+      entityTypes.forEach((data, name) => {
+        allItems.push({ type: name, distance: data.distance, position: data.position, count: data.count, category: 'entity' });
+      });
+
+      // Sort by distance (closest first) and limit results
+      allItems.sort((a, b) => a.distance - b.distance);
+      const limitedItems = allItems.slice(0, maxBlockTypes);
+
+      if (limitedItems.length === 0) {
+        return `No interesting blocks or entities found within ${maxDistanceSideways} blocks horizontally and ${maxDistanceUpDown} blocks vertically.`;
+      }
+
+      let output = `Found ${limitedItems.length} nearby items (of ${allItems.length} total):\n\n`;
+      output += `Entity/Block;Name;Count;Closest_Distance;Closest_location(x,y,z)\n`;
+
+      limitedItems.forEach((item) => {
+        const pos = item.position;
+        const typeMarker = item.category === 'entity' ? 'E' : 'B';
+        output += `${typeMarker};${item.type};${item.count};${item.distance.toFixed(1)};(${pos.x},${pos.y},${pos.z})\n`;
+      });
+
+      output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
+
+      return output.trim();
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "block-activate",
     "Activate a block (button, lever, door, trapdoor, etc.)",
     {
@@ -1914,28 +1837,26 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (block.name === 'air') {
-          return createResponse(`Cannot activate air block at (${x}, ${y}, ${z})`);
-        }
-
-        await bot.activateBlock(block);
-        return createResponse(`Activated ${block.name} at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (block.name === 'air') {
+        return `Cannot activate air block at (${x}, ${y}, ${z})`;
+      }
+
+      await bot.activateBlock(block);
+      return `Activated ${block.name} at (${x}, ${y}, ${z})`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "sign-update",
     "Update text on a sign",
     {
@@ -1945,24 +1866,20 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       text: z.string().describe("Text to write on the sign"),
       back: z.boolean().optional().default(false).describe("Write on back of sign (default: false)"),
     },
-    async ({ x, y, z, text, back }): Promise<McpResponse> => {
-      try {
-        const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos);
+    async ({ x, y, z, text, back }) => {
+      const blockPos = new Vec3(x, y, z);
+      const block = bot.blockAt(blockPos);
 
-        if (!block) {
-          return createResponse(`No block found at (${x}, ${y}, ${z})`);
-        }
-
-        if (!block.name.includes('sign')) {
-          return createResponse(`Block at (${x}, ${y}, ${z}) is ${block.name}, not a sign`);
-        }
-
-        bot.updateSign(block, text, back);
-        return createResponse(`Updated sign at (${x}, ${y}, ${z})` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!block) {
+        return `No block found at (${x}, ${y}, ${z})`;
       }
+
+      if (!block.name.includes('sign')) {
+        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a sign`;
+      }
+
+      bot.updateSign(block, text, back);
+      return `Updated sign at (${x}, ${y}, ${z})`;
     }
   );
 }
@@ -1970,7 +1887,9 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
 // ========== Entity Interaction Tools ==========
 
 export function registerEntityTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "find-entity",
     "Find the nearest entity of a specific type",
     {
@@ -1983,38 +1902,32 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Maximum search distance (default: 16)"),
     },
-    async ({ type = "", maxDistance = 16 }): Promise<McpResponse> => {
-      try {
-        const entityFilter = (entity: Entity) => {
-          if (!type) return true;
-          if (type === "player") return entity.type === "player";
-          if (type === "mob") return entity.type === "mob";
-          return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
-        };
+    async ({ type = "", maxDistance = 16 }) => {
+      const entityFilter = (entity: Entity) => {
+        if (!type) return true;
+        if (type === "player") return entity.type === "player";
+        if (type === "mob") return entity.type === "mob";
+        return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
+      };
 
-        const entity = bot.nearestEntity(entityFilter);
+      const entity = bot.nearestEntity(entityFilter);
 
-        if (
-          !entity ||
-          bot.entity.position.distanceTo(entity.position) > maxDistance
-        ) {
-          return createResponse(
-            `No ${type || "entity"} found within ${maxDistance} blocks`
-          );
-        }
-
-        return createResponse(
-          `Found ${
-            entity.name || (entity as any).username || entity.type
-          } at position ${formatBotPosition(entity.position)}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (
+        !entity ||
+        bot.entity.position.distanceTo(entity.position) > maxDistance
+      ) {
+        return `No ${type || "entity"} found within ${maxDistance} blocks`;
       }
+
+      return `Found ${
+        entity.name || (entity as any).username || entity.type
+      } at position ${formatBotPosition(entity.position)}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "attack-entity",
     "Attack a nearby entity repeatedly until it dies",
     {
@@ -2027,222 +1940,198 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Maximum search distance (default: 4)"),
     },
-    async ({ type = "", maxDistance = 4 }): Promise<McpResponse> => {
-      try {
-        const entityFilter = (entity: Entity) => {
-          // Don't attack players or ourselves
-          if (entity.type === "player" || entity === bot.entity) return false;
-          if (!type) return true;
-          return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
-        };
+    async ({ type = "", maxDistance = 4 }) => {
+      const entityFilter = (entity: Entity) => {
+        // Don't attack players or ourselves
+        if (entity.type === "player" || entity === bot.entity) return false;
+        if (!type) return true;
+        return Boolean(entity.name && entity.name.includes(type.toLowerCase()));
+      };
 
-        const entity = bot.nearestEntity(entityFilter);
+      const entity = bot.nearestEntity(entityFilter);
 
-        if (
-          !entity ||
-          bot.entity.position.distanceTo(entity.position) > maxDistance
-        ) {
-          return createResponse(
-            `No ${type || "entity"} found within ${maxDistance} blocks to attack`
-          );
-        }
-
-        const entityName = entity.name || entity.type || "entity";
-        const initialPos = entity.position.clone();
-
-        log("info", `Attacking ${entityName} at ${formatBotPosition(initialPos)}`);
-
-        // Attack until entity is dead
-        let attackCount = 0;
-        const maxAttacks = 20; // Safety limit
-
-        while (entity.isValid && attackCount < maxAttacks) {
-          // Look at the entity
-          await bot.lookAt(entity.position, true);
-
-          // Attack (synchronous)
-          bot.attack(entity);
-          attackCount++;
-
-          // Wait a bit between attacks (attack cooldown)
-          await new Promise(resolve => setTimeout(resolve, 500));
-
-          // Check if entity is still close enough
-          if (bot.entity.position.distanceTo(entity.position) > maxDistance + 2) {
-            return createResponse(
-              `${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`
-            );
-          }
-        }
-
-        if (attackCount >= maxAttacks) {
-          return createResponse(
-            `Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`
-          );
-        }
-
-        return createResponse(
-          `Successfully killed ${entityName} with ${attackCount} attacks at position ${formatBotPosition(initialPos)}`
-        );
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (
+        !entity ||
+        bot.entity.position.distanceTo(entity.position) > maxDistance
+      ) {
+        return `No ${type || "entity"} found within ${maxDistance} blocks to attack`;
       }
+
+      const entityName = entity.name || entity.type || "entity";
+      const initialPos = entity.position.clone();
+
+      log("info", `Attacking ${entityName} at ${formatBotPosition(initialPos)}`);
+
+      // Attack until entity is dead
+      let attackCount = 0;
+      const maxAttacks = 20; // Safety limit
+
+      while (entity.isValid && attackCount < maxAttacks) {
+        // Look at the entity
+        await bot.lookAt(entity.position, true);
+
+        // Attack (synchronous)
+        bot.attack(entity);
+        attackCount++;
+
+        // Wait a bit between attacks (attack cooldown)
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Check if entity is still close enough
+        if (bot.entity.position.distanceTo(entity.position) > maxDistance + 2) {
+          return `${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`;
+        }
+      }
+
+      if (attackCount >= maxAttacks) {
+        return `Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`;
+      }
+
+      return `Successfully killed ${entityName} with ${attackCount} attacks at position ${formatBotPosition(initialPos)}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "entity-interact",
     "Right-click/interact with nearest entity",
     {
       entityType: z.string().optional().describe("Type of entity to interact with (e.g., 'villager', 'sheep')"),
       maxDistance: z.number().optional().default(4).describe("Maximum search distance (default: 4)"),
     },
-    async ({ entityType, maxDistance }): Promise<McpResponse> => {
-      try {
-        const entity = entityType
-          ? bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance)
-          : bot.nearestEntity(e => bot.entity.position.distanceTo(e.position) <= maxDistance);
+    async ({ entityType, maxDistance }) => {
+      const entity = entityType
+        ? bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance)
+        : bot.nearestEntity(e => bot.entity.position.distanceTo(e.position) <= maxDistance);
 
-        if (!entity) {
-          return createResponse(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
-        }
-
-        await bot.activateEntity(entity);
-        return createResponse(`Interacted with ${entity.name || entity.type}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!entity) {
+        return `No ${entityType || 'entity'} found within ${maxDistance} blocks`;
       }
+
+      await bot.activateEntity(entity);
+      return `Interacted with ${entity.name || entity.type}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "entity-use-item-on",
     "Use held item on entity (shears on sheep, dye on wolf, etc.)",
     {
       entityType: z.string().describe("Type of entity (e.g., 'sheep', 'wolf')"),
       maxDistance: z.number().optional().default(4).describe("Maximum search distance (default: 4)"),
     },
-    async ({ entityType, maxDistance }): Promise<McpResponse> => {
-      try {
-        const heldItem = bot.heldItem;
-        if (!heldItem) {
-          return createResponse(`No item held in main hand`);
-        }
-
-        const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
-
-        if (!entity) {
-          return createResponse(`No ${entityType} found within ${maxDistance} blocks`);
-        }
-
-        bot.useOn(entity);
-        return createResponse(`Used ${heldItem.name} on ${entity.name || entity.type}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async ({ entityType, maxDistance }) => {
+      const heldItem = bot.heldItem;
+      if (!heldItem) {
+        return `No item held in main hand`;
       }
+
+      const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
+
+      if (!entity) {
+        return `No ${entityType} found within ${maxDistance} blocks`;
+      }
+
+      bot.useOn(entity);
+      return `Used ${heldItem.name} on ${entity.name || entity.type}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "entity-mount",
     "Mount a horse, boat, minecart, etc.",
     {
       entityType: z.string().describe("Type of entity to mount (e.g., 'horse', 'boat', 'minecart')"),
       maxDistance: z.number().optional().default(4).describe("Maximum search distance (default: 4)"),
     },
-    async ({ entityType, maxDistance }): Promise<McpResponse> => {
-      try {
-        const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
+    async ({ entityType, maxDistance }) => {
+      const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
-        if (!entity) {
-          return createResponse(`No ${entityType} found within ${maxDistance} blocks`);
-        }
-
-        if (bot.entity.vehicle) {
-          return createResponse(`Already mounted on ${bot.entity.vehicle.name || bot.entity.vehicle.type}`);
-        }
-
-        bot.mount(entity);
-        return createResponse(`Mounted ${entity.name || entity.type}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!entity) {
+        return `No ${entityType} found within ${maxDistance} blocks`;
       }
+
+      if (bot.entity.vehicle) {
+        return `Already mounted on ${bot.entity.vehicle.name || bot.entity.vehicle.type}`;
+      }
+
+      bot.mount(entity);
+      return `Mounted ${entity.name || entity.type}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "entity-dismount",
     "Dismount from current mount",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        if (!bot.entity.vehicle) {
-          return createResponse(`Not currently mounted on anything`);
-        }
-
-        const vehicleName = bot.entity.vehicle.name || bot.entity.vehicle.type;
-        bot.dismount();
-        return createResponse(`Dismounted from ${vehicleName}` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async () => {
+      if (!bot.entity.vehicle) {
+        return `Not currently mounted on anything`;
       }
+
+      const vehicleName = bot.entity.vehicle.name || bot.entity.vehicle.type;
+      bot.dismount();
+      return `Dismounted from ${vehicleName}`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "villager-open",
     "Open trade window with nearest villager",
     {
       maxDistance: z.number().optional().default(4).describe("Maximum search distance (default: 4)"),
     },
-    async ({ maxDistance }): Promise<McpResponse> => {
-      try {
-        const entity = bot.nearestEntity(e => e.name === 'villager' && bot.entity.position.distanceTo(e.position) <= maxDistance);
+    async ({ maxDistance }) => {
+      const entity = bot.nearestEntity(e => e.name === 'villager' && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
-        if (!entity) {
-          return createResponse(`No villager found within ${maxDistance} blocks`);
-        }
-
-        const villager = await bot.openVillager(entity);
-        const trades = villager.trades;
-
-        if (!trades || trades.length === 0) {
-          return createResponse(`Opened villager but no trades available` + getOptionalNewsFyi(bot));
-        }
-
-        let tradesText = `Opened villager with ${trades.length} trades:\n`;
-        trades.forEach((trade: any, index: number) => {
-          const inputItems = trade.inputItem1 ? `${trade.inputItem1.count}x ${trade.inputItem1.name}` : '';
-          const inputItems2 = trade.inputItem2 ? ` + ${trade.inputItem2.count}x ${trade.inputItem2.name}` : '';
-          const outputItem = trade.outputItem ? `${trade.outputItem.count}x ${trade.outputItem.name}` : '';
-          tradesText += `  ${index}: ${inputItems}${inputItems2} -> ${outputItem}\n`;
-        });
-
-        return createResponse(tradesText.trim() + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!entity) {
+        return `No villager found within ${maxDistance} blocks`;
       }
+
+      const villager = await bot.openVillager(entity);
+      const trades = villager.trades;
+
+      if (!trades || trades.length === 0) {
+        return `Opened villager but no trades available`;
+      }
+
+      let tradesText = `Opened villager with ${trades.length} trades:\n`;
+      trades.forEach((trade: any, index: number) => {
+        const inputItems = trade.inputItem1 ? `${trade.inputItem1.count}x ${trade.inputItem1.name}` : '';
+        const inputItems2 = trade.inputItem2 ? ` + ${trade.inputItem2.count}x ${trade.inputItem2.name}` : '';
+        const outputItem = trade.outputItem ? `${trade.outputItem.count}x ${trade.outputItem.name}` : '';
+        tradesText += `  ${index}: ${inputItems}${inputItems2} -> ${outputItem}\n`;
+      });
+
+      return tradesText.trim();
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "villager-trade",
     "Execute a trade with an open villager",
     {
       tradeIndex: z.number().describe("Index of the trade to execute (0-based)"),
       times: z.number().optional().default(1).describe("Number of times to repeat the trade (default: 1)"),
     },
-    async ({ tradeIndex, times }): Promise<McpResponse> => {
-      try {
-        if (!bot.currentWindow) {
-          return createResponse(`No villager window open. Use villager-open first`);
-        }
-
-        await bot.trade(bot.currentWindow as any, tradeIndex, times);
-        return createResponse(`Executed trade ${tradeIndex} ${times} time(s)` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
+    async ({ tradeIndex, times }) => {
+      if (!bot.currentWindow) {
+        return `No villager window open. Use villager-open first`;
       }
+
+      await bot.trade(bot.currentWindow as any, tradeIndex, times);
+      return `Executed trade ${tradeIndex} ${times} time(s)`;
     }
   );
 }
@@ -2250,23 +2139,23 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
 // ========== Chat Tools ==========
 
 export function registerChatTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "send-chat",
     "Send a chat message in-game",
     {
       message: z.string().describe("Message to send in chat"),
     },
-    async ({ message }): Promise<McpResponse> => {
-      try {
-        bot.chat(message);
-        return createResponse(`Sent message: "${message}"`);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async ({ message }) => {
+      bot.chat(message);
+      return `Sent message: "${message}"`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "read-chat",
     "Get recent chat messages from players",
     {
@@ -2278,44 +2167,38 @@ export function registerChatTools(server: McpServer, bot: Bot) {
           "Max recent messages to retrieve"
         ),
     },
-    async ({ count }): Promise<McpResponse> => {
-      try {
-        const maxCount = Math.min(count, MAX_STORED_MESSAGES);
-        const messages = messageStore.getRecentMessages(maxCount);
+    async ({ count }) => {
+      const maxCount = Math.min(count, MAX_STORED_MESSAGES);
+      const messages = messageStore.getRecentMessages(maxCount);
 
-        if (messages.length === 0) {
-          return createResponse("No chat messages found");
-        }
-
-        let output = `Found ${messages.length} chat message(s):\n\n`;
-        messages.forEach((msg, index) => {
-          const timestamp = new Date(msg.timestamp).toISOString();
-          output += `${index + 1}. ${timestamp} - ${msg.username}: ${
-            msg.content
-          }\n`;
-        });
-
-        return createResponse(output);
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (messages.length === 0) {
+        return "No chat messages found";
       }
+
+      let output = `Found ${messages.length} chat message(s):\n\n`;
+      messages.forEach((msg, index) => {
+        const timestamp = new Date(msg.timestamp).toISOString();
+        output += `${index + 1}. ${timestamp} - ${msg.username}: ${
+          msg.content
+        }\n`;
+      });
+
+      return output;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "player-whisper",
     "Send a private message to a player",
     {
       username: z.string().describe("Username of the player to whisper"),
       message: z.string().describe("Message to send"),
     },
-    async ({ username, message }): Promise<McpResponse> => {
-      try {
-        bot.whisper(username, message);
-        return createResponse(`Whispered to ${username}: "${message}"` + getOptionalNewsFyi(bot));
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async ({ username, message }) => {
+      bot.whisper(username, message);
+      return `Whispered to ${username}: "${message}"`;
     }
   );
 }
@@ -2323,55 +2206,49 @@ export function registerChatTools(server: McpServer, bot: Bot) {
 // ========== Game State Tools ============
 
 export function registerGameStateTools(server: McpServer, bot: Bot) {
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "detect-gamemode",
     "Detect the gamemode on game",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        return createResponse(`Bot gamemode: "${bot.game.gameMode}"`);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      return `Bot gamemode: "${bot.game.gameMode}"`;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "get-status",
     "Get the bot's health, food, and other status information",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const health = bot.health;
-        const food = bot.food;
-        const saturation = bot.foodSaturation;
-        const oxygen = bot.oxygenLevel;
+    async () => {
+      const health = bot.health;
+      const food = bot.food;
+      const saturation = bot.foodSaturation;
+      const oxygen = bot.oxygenLevel;
 
-        let status = `Bot Status:\n`;
-        status += `  Health: ${health}/20 (${(health/20*100).toFixed(0)}%)\n`;
-        status += `  Food: ${food}/20 (${(food/20*100).toFixed(0)}%)\n`;
-        status += `  Saturation: ${saturation.toFixed(1)}\n`;
-        status += `  Oxygen: ${oxygen}/20\n`;
-        status += `  Game Mode: ${bot.game.gameMode}`;
+      let status = `Bot Status:\n`;
+      status += `  Health: ${health}/20 (${(health/20*100).toFixed(0)}%)\n`;
+      status += `  Food: ${food}/20 (${(food/20*100).toFixed(0)}%)\n`;
+      status += `  Saturation: ${saturation.toFixed(1)}\n`;
+      status += `  Oxygen: ${oxygen}/20\n`;
+      status += `  Game Mode: ${bot.game.gameMode}`;
 
-        return createResponse(status);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+      return status;
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "show-adjacent-blocks",
     "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
     {},
-    async (): Promise<McpResponse> => {
-      try {
-        const result = getAdjacentBlocks(bot);
-        return createResponse(result);
-      } catch (error) {
-        return createErrorResponse(error as Error);
-      }
+    async () => {
+      const result = getAdjacentBlocks(bot);
+      return result;
     }
   );
 }
