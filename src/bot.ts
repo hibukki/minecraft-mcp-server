@@ -1429,6 +1429,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         if (lightInfo && lightInfo.totalLight < 8) {
           response += ` (fyi: effective light was ${lightInfo.totalLight}/15)`;
         }
+        response += ` This mcp tool is slow, mining 1 block per call. To mine many blocks at once while navigating, use a different tool.`
         response += getOptionalNewsFyi(bot);
 
         return createResponse(response);
