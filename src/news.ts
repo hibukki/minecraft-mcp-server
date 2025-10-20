@@ -16,7 +16,7 @@ export function getOptionalNewsFyi(bot: Bot): string {
       (currentFeetPos.x !== state.lastFeetPos.x ||
        currentFeetPos.y !== state.lastFeetPos.y ||
        currentFeetPos.z !== state.lastFeetPos.z)) {
-    news.position = currentFeetPos;
+    news.botFeet = currentFeetPos;
   }
   state.lastFeetPos = currentFeetPos;
 
@@ -119,11 +119,11 @@ export function getOptionalNewsFyi(bot: Bot): string {
     state.lastChatTimestamp = Math.max(...newMessages.map(msg => msg.timestamp));
   }
 
-  if (Object.keys(news).length === 0) {
+  if (updates.length === 0) {
     return '';
   }
 
-  const newsStr = JSON.stringify(news, null, 2);
-  logBotState(newsStr);
-  return ` (updates: ${newsStr})`;
+  const updateStr = updates.join(', ');
+  logBotState(updateStr);
+  return ` (updates: ${updateStr})`;
 }
