@@ -6,7 +6,7 @@ import { messageStore } from "./chatMessages.js";
 
 export function getOptionalNewsFyi(bot: Bot): string {
   const state = getBotState(bot);
-  const updates: string[] = [];
+  const news: Record<string, any> = {};
 
   // Track bot location (feet position)
   const botPos = bot.entity.position;
@@ -16,26 +16,26 @@ export function getOptionalNewsFyi(bot: Bot): string {
       (currentFeetPos.x !== state.lastFeetPos.x ||
        currentFeetPos.y !== state.lastFeetPos.y ||
        currentFeetPos.z !== state.lastFeetPos.z)) {
-    updates.push(`Bot feet at ${currentFeetPos.x}, ${currentFeetPos.y}, ${currentFeetPos.z}`);
+    news.position = currentFeetPos;
   }
   state.lastFeetPos = currentFeetPos;
 
   const currentOxygen = bot.oxygenLevel;
   if (state.lastOxygen !== undefined && currentOxygen < state.lastOxygen) {
-    updates.push(`Oxygen ${currentOxygen}/20`);
+    news.oxygen = { current: currentOxygen, max: 20 };
   }
   state.lastOxygen = currentOxygen;
 
   const currentHealth = bot.health;
   if (state.lastHealth !== undefined && currentHealth < state.lastHealth) {
-    updates.push(`Health ${currentHealth.toFixed(1)}/20`);
+    news.health = { current: parseFloat(currentHealth.toFixed(1)), max: 20 };
   }
   state.lastHealth = currentHealth;
 
   const durability = getEquippedItemDurability(bot);
   if (durability) {
     if (state.lastDurability !== undefined && durability.remaining < state.lastDurability) {
-      updates.push(`Equipped item durability ${durability.remaining}/${durability.max}`);
+      news.equippedItemDurability = { remaining: durability.remaining, max: durability.max };
     }
     state.lastDurability = durability.remaining;
   } else {
@@ -51,19 +51,19 @@ export function getOptionalNewsFyi(bot: Bot): string {
   }
 
   if (state.lastInventory) {
-    const inventoryChanges: string[] = [];
+    const inventoryChanges: Array<{ item: string; gained: number }> = [];
 
     // Check for added or increased items
     for (const [itemName, currentCount] of currentInventory) {
       const previousCount = state.lastInventory.get(itemName) || 0;
       const diff = currentCount - previousCount;
       if (diff > 0) {
-        inventoryChanges.push(`+${diff}x ${itemName}`);
+        inventoryChanges.push({ item: itemName, gained: diff });
       }
     }
 
     if (inventoryChanges.length > 0) {
-      updates.push(`Inventory: ${inventoryChanges.join(', ')}`);
+      news.inventory = inventoryChanges;
     }
   }
   state.lastInventory = currentInventory;
@@ -103,13 +103,7 @@ export function getOptionalNewsFyi(bot: Bot): string {
       });
 
     if (entitiesChanged) {
-      if (currentEntities.length === 0) {
-        updates.push('Nearby entities: none');
-      } else {
-        const entityDescriptions = currentEntities.map(e => `${e.type} at (${e.location.x},${e.location.y},${e.location.z})`
-        );
-        updates.push(`Nearby entities: ${entityDescriptions.join(', ')}`);
-      }
+      news.nearbyEntities = currentEntities;
     }
   }
   state.lastEntities = currentEntities;
@@ -121,16 +115,15 @@ export function getOptionalNewsFyi(bot: Bot): string {
   const newMessages = recentMessages.filter(msg => msg.timestamp > lastCheckedTimestamp);
 
   if (newMessages.length > 0) {
-    const messageDescriptions = newMessages.map(msg => `${msg.username}: "${msg.content}"`);
-    updates.push(`New chat messages: ${messageDescriptions.join(', ')}`);
+    news.chat = newMessages.map(msg => ({ username: msg.username, message: msg.content }));
     state.lastChatTimestamp = Math.max(...newMessages.map(msg => msg.timestamp));
   }
 
-  if (updates.length === 0) {
+  if (Object.keys(news).length === 0) {
     return '';
   }
 
-  const updateStr = updates.join(', ');
-  logBotState(updateStr);
-  return ` (updates: ${updateStr})`;
+  const newsStr = JSON.stringify(news, null, 2);
+  logBotState(newsStr);
+  return ` (updates: ${newsStr})`;
 }
