@@ -7,8 +7,13 @@ import { Vec3 } from "vec3";
  * Get the distance from the bot to the target
  */
 
-export function getDistance(bot: Bot, target: Vec3): number {
+export function getDistanceToXYZ(bot: Bot, target: Vec3): number {
   return bot.entity.position.distanceTo(target);
+}
+
+export function getDistanceToBlock(bot: Bot, block: Block | null): number {
+  const blockCenter = getBlockCenter(block);
+  return getDistanceToXYZ(bot, blockCenter);
 }
 
 export function getBlockCenter(block: Block | null): Vec3 {
