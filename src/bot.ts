@@ -900,7 +900,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
   addServerTool(
     server,
     bot,
-    "move-forwards-by-mining",
+    "move-horizontally-by-mining",
     "Mines blocks ahead and walks forward, repeating for the specified number of blocks to make progress underground",
     {
       targetX: z.number().describe("Target X coordinate to determine direction"),
@@ -1679,7 +1679,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         const block = bot.blockAt(blockPos);
 
         if (!block) {
-          result += `(${pos.x}, ${pos.y}, ${pos.z}): (unknown, maybe bug?)\n`;
+          result += `(${pos.x}, ${pos.y}, ${pos.z}): (unkonwn, maybe bug?)\n`;
         } else {
           const lightInfo = getBlockLightLevelFormatted(block);
           result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
@@ -1747,17 +1747,20 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       maxDistanceSideways: z
         .number()
         .optional()
-        .describe("Maximum horizontal search distance (default: 16)"),
+        .default(16)
+        .describe("Maximum horizontal search distance"),
       maxDistanceUpDown: z
         .number()
         .optional()
-        .describe("Maximum vertical search distance (default: 8)"),
+        .default(8),
       maxBlockTypes: z
         .number()
         .optional()
-        .describe("Limit on number of unique block types to return (default: 20)"),
+        .default(20)
+        .describe("Limit on number of unique block types to return"),
+
     },
-    async ({ maxDistanceSideways = 16, maxDistanceUpDown = 8, maxBlockTypes = 20 }) => {
+    async ({ maxDistanceSideways, maxDistanceUpDown, maxBlockTypes }) => {
       const botPos = bot.entity.position;
 
       // Define blocks to ignore (common/boring blocks)
