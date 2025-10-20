@@ -1679,14 +1679,14 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       })).describe("Array of positions to check, e.g., [{x: 1, y: 2, z: 3}, {x: 4, y: 5, z: 6}]"),
     },
     async ({ positions }) => {
-      let result = `Block information for ${positions.length} position(s):\n\n`;
+      let result = `Blocks:\n\n`;
 
       for (const pos of positions) {
         const blockPos = new Vec3(pos.x, pos.y, pos.z);
         const block = bot.blockAt(blockPos);
 
         if (!block) {
-          result += `(${pos.x}, ${pos.y}, ${pos.z}): No block information found\n`;
+          result += `(${pos.x}, ${pos.y}, ${pos.z}): (unknown, maybe bug?)\n`;
         } else {
           const lightInfo = getBlockLightLevelFormatted(block);
           result += `(${pos.x}, ${pos.y}, ${pos.z}): ${block.name}, ${lightInfo}\n`;
@@ -2270,17 +2270,17 @@ export function registerGameStateTools(server: McpServer, bot: Bot) {
     }
   );
 
-  addServerTool(
-    server,
-    bot,
-    "show-adjacent-blocks",
-    "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
-    {},
-    async () => {
-      const result = getAdjacentBlocks(bot);
-      return result;
-    }
-  );
+  // addServerTool(
+  //   server,
+  //   bot,
+  //   "show-adjacent-blocks",
+  //   "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
+  //   {},
+  //   async () => {
+  //     const result = getAdjacentBlocks(bot);
+  //     return result;
+  //   }
+  // );
 }
 
 // ========== Main Application ==========
