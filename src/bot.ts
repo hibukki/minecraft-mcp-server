@@ -282,19 +282,19 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
           }
 
           log("info", `Found crafting table at ${craftingTable.position}`);
-        }
 
-        const distanceToCraftingTable = getDistanceToBlock(bot, craftingTable);
+          const distanceToCraftingTable = getDistanceToBlock(bot, craftingTable);
 
-        if (distanceToCraftingTable > 3) {
-          return createResponse(
-            `Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`
-          );
+          if (distanceToCraftingTable > 3) {
+            return createResponse(
+              `Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`
+            );
+          }
         }
 
         // Try to get craftable recipes directly with timeout
         const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => reject(new Error(`Crafting didn't start after 1 second, maybe the bot is too far from the crafting table? CraftingTable location: ${craftingTable?.position} CraftingTable distance: ${distanceToCraftingTable}`)), 1000);
+          setTimeout(() => reject(new Error(`Crafting didn't start after 1 second. CraftingTable location: ${craftingTable?.position}`)), 1000);
         });
 
         const recipesPromise = Promise.resolve(bot.recipesFor(item.id, null, 1, craftingTable));
