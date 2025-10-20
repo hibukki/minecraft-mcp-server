@@ -30,7 +30,7 @@ import {
 import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
-} from "./getStrafeDirectionAndAmount.js";
+} from "./strafe.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
