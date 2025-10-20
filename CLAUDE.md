@@ -20,7 +20,8 @@
 
 ## MCP server capabilities
 
-- The character you control isn't fast enough to do things like jump-and-place-block. You have some functions that send many commands one after the other (e.g digging stairs), and you have lower level (slower) commands like digging one block,
+- The character you control isn't fast enough to do things like jump-and-place-block. You have some functions that send many commands one after the other (e.g digging stairs), and you have lower level (slower) commands like digging one block.
+- Tip: Since each mcp call is slow, try to accomplish a lot in each call, e.g if you know of 5-10 blocks you want to mine, send them all in a single call.
 
 ## minecraft-explorer subagent
 
