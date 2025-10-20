@@ -13,6 +13,8 @@ import type { Arguments } from "yargs";
 import { hideBin } from "yargs/helpers";
 
 import type { Entity } from "prismarine-entity";
+import type { Block } from "prismarine-block";
+import type { Item } from "prismarine-item";
 import {
   formatBotPosition,
   formatBlockPosition,
@@ -143,6 +145,106 @@ function addServerTool<TSchema extends Record<string, z.ZodTypeAny>>(
       }
     }
   );
+}
+
+// ========== Helper Functions for Tools ==========
+
+/**
+ * Get block at position or throw error
+ */
+function expectBlock(bot: Bot, pos: Vec3): Block {
+  const block = bot.blockAt(pos);
+  if (!block) {
+    throw new Error(`No block found at ${formatPosition(pos)}`);
+  }
+  return block;
+}
+
+/**
+ * Get block at position and verify it matches expected type
+ */
+function expectBlockOfType(bot: Bot, pos: Vec3, expectedType: string | ((name: string) => boolean)): Block {
+  const block = expectBlock(bot, pos);
+  const matches = typeof expectedType === 'string'
+    ? block.name.includes(expectedType)
+    : expectedType(block.name);
+
+  if (!matches) {
+    const expected = typeof expectedType === 'string' ? expectedType : 'expected type';
+    throw new Error(`Block at ${formatPosition(pos)} is ${block.name}, not ${expected}`);
+  }
+  return block;
+}
+
+/**
+ * Find item in inventory or throw error
+ */
+function expectItemInInventory(bot: Bot, itemName: string): Item {
+  const item = bot.inventory.items().find(i => i.name === itemName);
+  if (!item) {
+    const inventory = getInventorySummary(bot);
+    throw new Error(`Cannot find ${itemName}: not found in inventory. Inventory: ${inventory}`);
+  }
+  return item;
+}
+
+/**
+ * Find and equip item or throw error
+ */
+async function equipItem(bot: Bot, itemName: string, destination: 'hand' | 'head' | 'torso' | 'legs' | 'feet' | 'off-hand' = 'hand'): Promise<Item> {
+  const item = expectItemInInventory(bot, itemName);
+  await bot.equip(item, destination);
+  return item;
+}
+
+/**
+ * Find entity matching criteria or throw error
+ */
+function expectEntity(bot: Bot, entityType: string | undefined, maxDistance: number, filter?: (entity: Entity) => boolean): Entity {
+  const entityFilter = filter || ((e: Entity) => !entityType || e.name === entityType);
+  const entity = bot.nearestEntity(e => entityFilter(e) && bot.entity.position.distanceTo(e.position) <= maxDistance);
+
+  if (!entity) {
+    throw new Error(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
+  }
+  return entity;
+}
+
+/**
+ * Validate item has sufficient count
+ */
+function expectSufficientItems(item: Item, needed: number): void {
+  if (item.count < needed) {
+    throw new Error(`Cannot use ${needed}x ${item.name}: only have ${item.count}`);
+  }
+}
+
+/**
+ * Format position as (x, y, z)
+ */
+function formatPosition(pos: Vec3): string {
+  return `(${pos.x}, ${pos.y}, ${pos.z})`;
+}
+
+/**
+ * Get summary of inventory contents
+ */
+function getInventorySummary(bot: Bot): string {
+  return bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
+}
+
+/**
+ * Get entity name, falling back to type or unknown_entity
+ */
+function getEntityName(entity: Entity): string {
+  return entity.name || (entity as any).username || entity.type || 'unknown_entity';
+}
+
+/**
+ * Check if block is empty (air, cave_air, void_air)
+ */
+function isBlockEmpty(block: Block): boolean {
+  return block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air';
 }
 
 // Wrapper to log tool calls
@@ -1066,18 +1168,8 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
       count: z.number().optional().default(1).describe("Number of items to drop (default: 1)"),
     },
     async ({ itemName, count }) => {
-      const items = bot.inventory.items();
-      const item = items.find(i => i.name === itemName);
-
-      if (!item) {
-        const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot drop ${itemName}: not found in inventory. Inventory: ${inventory}`;
-      }
-
-      if (item.count < count) {
-        return `Cannot drop ${count}x ${itemName}: only have ${item.count}`;
-      }
-
+      const item = expectItemInInventory(bot, itemName);
+      expectSufficientItems(item, count);
       await bot.toss(item.type, null, count);
       return `Dropped ${count}x ${itemName}`;
     }
@@ -1167,16 +1259,8 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!block.name.includes('chest')) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a chest`;
-      }
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, 'chest');
 
       const chest = await bot.openChest(block);
       const items = chest.containerItems();
@@ -1184,7 +1268,7 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
         ? items.map(i => `${i.name}(x${i.count})`).join(', ')
         : 'empty';
 
-      return `Opened chest at (${x}, ${y}, ${z}). Contents: ${itemsSummary}`;
+      return `Opened chest at ${formatPosition(pos)}. Contents: ${itemsSummary}`;
     }
   );
 
@@ -1199,19 +1283,10 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!block.name.includes('furnace')) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a furnace`;
-      }
-
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, 'furnace');
       await bot.openFurnace(block);
-      return `Opened furnace at (${x}, ${y}, ${z})`;
+      return `Opened furnace at ${formatPosition(pos)}`;
     }
   );
 
@@ -1226,19 +1301,10 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!block.name.includes('enchanting_table')) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not an enchanting table`;
-      }
-
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, 'enchanting_table');
       await bot.openEnchantmentTable(block);
-      return `Opened enchantment table at (${x}, ${y}, ${z})`;
+      return `Opened enchantment table at ${formatPosition(pos)}`;
     }
   );
 
@@ -1253,19 +1319,10 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!block.name.includes('anvil')) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not an anvil`;
-      }
-
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, 'anvil');
       await bot.openAnvil(block);
-      return `Opened anvil at (${x}, ${y}, ${z})`;
+      return `Opened anvil at ${formatPosition(pos)}`;
     }
   );
 
@@ -1321,19 +1378,10 @@ export function registerSurvivalTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!bot.isABed(block)) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a bed`;
-      }
-
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, (name) => bot.isABed(bot.blockAt(pos)!));
       await bot.sleep(block);
-      return `Sleeping in bed at (${x}, ${y}, ${z})`;
+      return `Sleeping in bed at ${formatPosition(pos)}`;
     }
   );
 
@@ -1468,18 +1516,12 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
     },
     async ({ blockName, x, y, z }) => {
       // Find and equip the block
-      const blockItem = bot.inventory.items().find(item => item.name === blockName);
-      if (!blockItem) {
-        const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot place ${blockName}: not found in inventory. Inventory: ${inventory}`;
-      }
-
-      await bot.equip(blockItem, 'hand');
+      await equipItem(bot, blockName, 'hand');
 
       const placePos = new Vec3(x, y, z);
       const blockAtPos = bot.blockAt(placePos);
-      if (blockAtPos && blockAtPos.name !== "air") {
-        return `There's already a block (${blockAtPos.name}) at (${x}, ${y}, ${z})`;
+      if (blockAtPos && !isBlockEmpty(blockAtPos)) {
+        throw new Error(`There's already a block (${blockAtPos.name}) at ${formatPosition(placePos)}`);
       }
 
       // Try all 6 faces
@@ -1494,11 +1536,11 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
 
       for (const face of faces) {
         const refBlock = bot.blockAt(placePos.plus(face.vec));
-        if (refBlock && refBlock.name !== "air" /* && bot.canSeeBlock(refBlock) */) {
+        if (refBlock && !isBlockEmpty(refBlock) /* && bot.canSeeBlock(refBlock) */) {
           try {
             await bot.lookAt(placePos, true);
             await bot.placeBlock(refBlock, face.vec.scaled(-1));
-            return `Placed block at (${x}, ${y}, ${z}) using ${face.name} face`;
+            return `Placed block at ${formatPosition(placePos)} using ${face.name} face`;
           } catch {
             // Try next face
             continue;
@@ -1507,8 +1549,8 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       }
 
       const dist = bot.entity.position.distanceTo(placePos);
-      return `Failed to place block at (${x}, ${y}, ${z}): No suitable reference block found` +
-        (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : '');
+      throw new Error(`Failed to place block at ${formatPosition(placePos)}: No suitable reference block found` +
+        (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : ''));
     }
   );
 
@@ -1838,19 +1880,13 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       z: z.number().describe("Z coordinate"),
     },
     async ({ x, y, z }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
+      const pos = new Vec3(x, y, z);
+      const block = expectBlock(bot, pos);
+      if (isBlockEmpty(block)) {
+        throw new Error(`Cannot activate air block at ${formatPosition(pos)}`);
       }
-
-      if (block.name === 'air') {
-        return `Cannot activate air block at (${x}, ${y}, ${z})`;
-      }
-
       await bot.activateBlock(block);
-      return `Activated ${block.name} at (${x}, ${y}, ${z})`;
+      return `Activated ${block.name} at ${formatPosition(pos)}`;
     }
   );
 
@@ -1867,19 +1903,10 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       back: z.boolean().optional().default(false).describe("Write on back of sign (default: false)"),
     },
     async ({ x, y, z, text, back }) => {
-      const blockPos = new Vec3(x, y, z);
-      const block = bot.blockAt(blockPos);
-
-      if (!block) {
-        return `No block found at (${x}, ${y}, ${z})`;
-      }
-
-      if (!block.name.includes('sign')) {
-        return `Block at (${x}, ${y}, ${z}) is ${block.name}, not a sign`;
-      }
-
+      const pos = new Vec3(x, y, z);
+      const block = expectBlockOfType(bot, pos, 'sign');
       bot.updateSign(block, text, back);
-      return `Updated sign at (${x}, ${y}, ${z})`;
+      return `Updated sign at ${formatPosition(pos)}`;
     }
   );
 }
@@ -2010,7 +2037,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       }
 
       await bot.activateEntity(entity);
-      return `Interacted with ${entity.name || entity.type}`;
+      return `Interacted with ${getEntityName(entity)}`;
     }
   );
 
@@ -2036,7 +2063,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       }
 
       bot.useOn(entity);
-      return `Used ${heldItem.name} on ${entity.name || entity.type}`;
+      return `Used ${heldItem.name} on ${getEntityName(entity)}`;
     }
   );
 
@@ -2057,11 +2084,11 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       }
 
       if (bot.entity.vehicle) {
-        return `Already mounted on ${bot.entity.vehicle.name || bot.entity.vehicle.type}`;
+        return `Already mounted on ${getEntityName(bot.entity.vehicle)}`;
       }
 
       bot.mount(entity);
-      return `Mounted ${entity.name || entity.type}`;
+      return `Mounted ${getEntityName(entity)}`;
     }
   );
 
