@@ -1882,7 +1882,7 @@ export function registerChatTools(server: McpServer, bot: Bot) {
           "Max recent messages to retrieve"
         ),
     },
-    async ({ count = 10 }): Promise<McpResponse> => {
+    async ({ count }): Promise<McpResponse> => {
       try {
         const maxCount = Math.min(count, MAX_STORED_MESSAGES);
         const messages = messageStore.getRecentMessages(maxCount);
