@@ -1348,12 +1348,24 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
     "place-block",
     "Place a block at the specified position",
     {
+      blockName: z.string().describe("Name of the block to place (e.g., 'dirt')"),
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
       z: z.number().describe("Z coordinate"),
     },
-    async ({ x, y, z }): Promise<McpResponse> => {
+    async ({ blockName, x, y, z }): Promise<McpResponse> => {
       try {
+        // Find and equip the block
+        const blockItem = bot.inventory.items().find(item => item.name === blockName);
+        if (!blockItem) {
+          const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
+          return createResponse(
+            `Cannot place ${blockName}: not found in inventory. Inventory: ${inventory}`
+          );
+        }
+
+        await bot.equip(blockItem, 'hand');
+
         const placePos = new Vec3(x, y, z);
         const blockAtPos = bot.blockAt(placePos);
         if (blockAtPos && blockAtPos.name !== "air") {
