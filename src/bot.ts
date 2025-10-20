@@ -110,6 +110,35 @@ export function createErrorResponse(error: Error | string): McpResponse {
   };
 }
 
+// Type helper to infer params from schema object
+type InferSchemaParams<T extends Record<string, z.ZodTypeAny>> = {
+  [K in keyof T]: z.infer<T[K]>
+};
+
+// Wrapper function to add tools with automatic error handling and news updates
+function addServerTool<TSchema extends Record<string, z.ZodTypeAny>>(
+  server: McpServer,
+  bot: Bot,
+  name: string,
+  description: string,
+  schema: TSchema,
+  handler: (params: InferSchemaParams<TSchema>) => Promise<string>
+) {
+  (server.tool as any)(
+    name,
+    description,
+    schema,
+    async (params: any) => {
+      try {
+        const result = await handler(params);
+        return createResponse(result + getOptionalNewsFyi(bot));
+      } catch (error) {
+        return createErrorResponse(error as Error);
+      }
+    }
+  );
+}
+
 // Wrapper to log tool calls
 export function withToolLogging<T extends Record<string, unknown>>(
   toolName: string,
@@ -1217,7 +1246,9 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
     }
   );
 
-  server.tool(
+  addServerTool(
+    server,
+    bot,
     "equip-item",
     "Equip a specific item",
     {
@@ -1227,24 +1258,18 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
         .optional()
         .describe("Where to equip the item (default: 'hand')"),
     },
-    async ({ itemName, destination = "hand" }): Promise<McpResponse> => {
-      try {
-        const items = bot.inventory.items();
-        const item = items.find(
-          (item) => item.name === itemName.toLowerCase()
-        );
+    async ({ itemName, destination = "hand" }) => {
+      const items = bot.inventory.items();
+      const item = items.find(
+        (item) => item.name === itemName.toLowerCase()
+      );
 
-        if (!item) {
-          return createResponse(
-            `Couldn't find any item matching '${itemName}' in inventory`
-          );
-        }
-
-        await bot.equip(item, destination as mineflayer.EquipmentDestination);
-        return createResponse(`Equipped ${item.name} to ${destination}`);
-      } catch (error) {
-        return createErrorResponse(error as Error);
+      if (!item) {
+        return `Couldn't find any item matching '${itemName}' in inventory`;
       }
+
+      await bot.equip(item, destination as mineflayer.EquipmentDestination);
+      return `Equipped ${item.name} to ${destination}`;
     }
   );
 }
