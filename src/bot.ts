@@ -40,20 +40,10 @@ import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock } from "./getDistance.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
-import {
-  expectBlock,
-  expectBlockOfType,
-  expectItemInInventory,
-  equipItem,
-  expectEntity,
-  expectSufficientItems,
-} from "./expectUtils.js";
-import {
-  formatPosition,
-  getInventorySummary,
-  getEntityName,
-  isBlockEmpty,
-} from "./utils.js";
+import { formatPosition } from "./formatting.js";
+import { getInventorySummary, expectItemInInventory, equipItem, expectSufficientItems } from "./inventory.js";
+import { getEntityName, expectEntity } from "./entities.js";
+import { isBlockEmpty, expectBlock, expectBlockOfType } from "./blocks.js";
 
 // ========== Type Definitions ==========
 
