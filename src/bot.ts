@@ -33,7 +33,7 @@ import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
 } from "./strafe.js";
-import { getBlocksAhead } from "./botLocation.js";
+import { getBlocksAhead, isBlockEmpty } from "./botLocation.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
@@ -238,13 +238,6 @@ function getInventorySummary(bot: Bot): string {
  */
 function getEntityName(entity: Entity): string {
   return entity.name || (entity as any).username || entity.type || 'unknown_entity';
-}
-
-/**
- * Check if block is empty (air, cave_air, void_air)
- */
-function isBlockEmpty(block: Block): boolean {
-  return block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air';
 }
 
 // Wrapper to log tool calls
