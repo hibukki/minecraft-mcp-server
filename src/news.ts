@@ -119,11 +119,11 @@ export function getOptionalNewsFyi(bot: Bot): string {
     state.lastChatTimestamp = Math.max(...newMessages.map(msg => msg.timestamp));
   }
 
-  if (updates.length === 0) {
+  if (Object.keys(news).length === 0) {
     return '';
   }
 
-  const updateStr = updates.join(', ');
+  const updateStr = JSON.stringify(news, null, 2);
   logBotState(updateStr);
   return ` (updates: ${updateStr})`;
 }
