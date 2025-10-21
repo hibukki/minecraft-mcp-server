@@ -33,7 +33,7 @@ import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
 } from "./strafe.js";
-import { getBlocksAhead } from "./botLocation.js";
+import { getBlocksAhead, isBlockEmpty } from "./botLocation.js";
 import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
@@ -43,7 +43,7 @@ import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 import { formatPosition } from "./formatting.js";
 import { getInventorySummary, expectItemInInventory, equipItem, expectSufficientItems } from "./inventory.js";
 import { getEntityName, expectEntity } from "./entities.js";
-import { isBlockEmpty, expectBlock, expectBlockOfType } from "./blocks.js";
+import { expectBlock, expectBlockOfType } from "./blocks.js";
 
 // ========== Type Definitions ==========
 
@@ -152,7 +152,7 @@ function addServerTool<TSchema extends Record<string, z.ZodTypeAny>>(
 }
 
 // ========== Helper Functions for Tools ==========
-// (Expect functions moved to expectUtils.ts)
+// (Helper functions moved to domain-specific files: formatting.ts, inventory.ts, entities.ts, blocks.ts)
 
 // Wrapper to log tool calls
 export function withToolLogging<T extends Record<string, unknown>>(
