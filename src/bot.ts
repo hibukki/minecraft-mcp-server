@@ -47,11 +47,13 @@ import {
   equipItem,
   expectEntity,
   expectSufficientItems,
+} from "./expectUtils.js";
+import {
   formatPosition,
   getInventorySummary,
   getEntityName,
   isBlockEmpty,
-} from "./expectUtils.js";
+} from "./utils.js";
 
 // ========== Type Definitions ==========
 
