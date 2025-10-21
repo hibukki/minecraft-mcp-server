@@ -23,6 +23,12 @@
 - The character you control isn't fast enough to do things like jump-and-place-block. You have some functions that send many commands one after the other (e.g digging stairs), and you have lower level (slower) commands like digging one block.
 - Tip: Since each mcp call is slow, try to accomplish a lot in each call, e.g if you know of 5-10 blocks you want to mine, send them all in a single call.
 
+### Movement
+
+- Your favorite way to get from place to place is with stairs. stairs-up and stairs-down. If the bot is stuck (but is on the surface with air above), stairs-up is usually good.
+- Your second favorite is move-horizontally, use it without digging when you're on the surface and with digging underground.
+- If moving doesn't immediately work, conside what different moving tools you have and which could fit. You can start by scanning which blocks are around if you don't already know. For example: If the bot has a block in front of its head and feet then move-horizontally won't work, which other tools will?
+
 ## minecraft-explorer subagent
 
 - It is less smart than you (uses haiku), you can give it tips
