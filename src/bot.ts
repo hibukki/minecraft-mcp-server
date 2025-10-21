@@ -793,7 +793,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       allowMiningOf: z
         .record(z.array(z.string()))
         .optional()
-        .describe("Optional tool-to-blocks mapping for auto-mining blocks above: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+        .describe("Optional tool-to-blocks mapping for auto-mining blocks above: {wooden_pickaxe: ['stone', 'cobblestone'], ...}. Use 'hand' to indicate no-tool"),
     },
     async ({ height, allowMiningOf = {} }) => {
       try {
@@ -908,7 +908,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetZ: z.number().describe("Target Z coordinate to determine direction"),
       allowMiningOf: z
         .record(z.string(), z.array(z.string()))
-        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}. Use 'hand' to indicate no-tool"),
       numBlocksForwards: z
         .number()
         .optional()
@@ -989,7 +989,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
     {
       allowMiningOf: z
         .record(z.string(), z.array(z.string()))
-        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}"),
+        .describe("Tool-to-blocks mapping for auto-mining: {wooden_pickaxe: ['stone', 'cobblestone'], ...}. Use 'hand' to indicate no-tool"),
       stepsToGoDown: z
         .number()
         .describe("Number of steps to descend"),
