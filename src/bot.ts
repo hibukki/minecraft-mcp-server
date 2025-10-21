@@ -40,6 +40,18 @@ import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock } from "./getDistance.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
+import {
+  expectBlock,
+  expectBlockOfType,
+  expectItemInInventory,
+  equipItem,
+  expectEntity,
+  expectSufficientItems,
+  formatPosition,
+  getInventorySummary,
+  getEntityName,
+  isBlockEmpty,
+} from "./expectUtils.js";
 
 // ========== Type Definitions ==========
 
@@ -148,104 +160,7 @@ function addServerTool<TSchema extends Record<string, z.ZodTypeAny>>(
 }
 
 // ========== Helper Functions for Tools ==========
-
-/**
- * Get block at position or throw error
- */
-function expectBlock(bot: Bot, pos: Vec3): Block {
-  const block = bot.blockAt(pos);
-  if (!block) {
-    throw new Error(`No block found at ${formatPosition(pos)}`);
-  }
-  return block;
-}
-
-/**
- * Get block at position and verify it matches expected type
- */
-function expectBlockOfType(bot: Bot, pos: Vec3, expectedType: string | ((name: string) => boolean)): Block {
-  const block = expectBlock(bot, pos);
-  const matches = typeof expectedType === 'string'
-    ? block.name.includes(expectedType)
-    : expectedType(block.name);
-
-  if (!matches) {
-    const expected = typeof expectedType === 'string' ? expectedType : 'expected type';
-    throw new Error(`Block at ${formatPosition(pos)} is ${block.name}, not ${expected}`);
-  }
-  return block;
-}
-
-/**
- * Find item in inventory or throw error
- */
-function expectItemInInventory(bot: Bot, itemName: string): Item {
-  const item = bot.inventory.items().find(i => i.name === itemName);
-  if (!item) {
-    const inventory = getInventorySummary(bot);
-    throw new Error(`Cannot find ${itemName}: not found in inventory. Inventory: ${inventory}`);
-  }
-  return item;
-}
-
-/**
- * Find and equip item or throw error
- */
-async function equipItem(bot: Bot, itemName: string, destination: 'hand' | 'head' | 'torso' | 'legs' | 'feet' | 'off-hand' = 'hand'): Promise<Item> {
-  const item = expectItemInInventory(bot, itemName);
-  await bot.equip(item, destination);
-  return item;
-}
-
-/**
- * Find entity matching criteria or throw error
- */
-function expectEntity(bot: Bot, entityType: string | undefined, maxDistance: number, filter?: (entity: Entity) => boolean): Entity {
-  const entityFilter = filter || ((e: Entity) => !entityType || e.name === entityType);
-  const entity = bot.nearestEntity(e => entityFilter(e) && bot.entity.position.distanceTo(e.position) <= maxDistance);
-
-  if (!entity) {
-    throw new Error(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
-  }
-  return entity;
-}
-
-/**
- * Validate item has sufficient count
- */
-function expectSufficientItems(item: Item, needed: number): void {
-  if (item.count < needed) {
-    throw new Error(`Cannot use ${needed}x ${item.name}: only have ${item.count}`);
-  }
-}
-
-/**
- * Format position as (x, y, z)
- */
-function formatPosition(pos: Vec3): string {
-  return `(${pos.x}, ${pos.y}, ${pos.z})`;
-}
-
-/**
- * Get summary of inventory contents
- */
-function getInventorySummary(bot: Bot): string {
-  return bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-}
-
-/**
- * Get entity name, falling back to type or unknown_entity
- */
-function getEntityName(entity: Entity): string {
-  return entity.name || (entity as any).username || entity.type || 'unknown_entity';
-}
-
-/**
- * Check if block is empty (air, cave_air, void_air)
- */
-function isBlockEmpty(block: Block): boolean {
-  return block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air';
-}
+// (Expect functions moved to expectUtils.ts)
 
 // Wrapper to log tool calls
 export function withToolLogging<T extends Record<string, unknown>>(
