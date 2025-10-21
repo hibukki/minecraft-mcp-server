@@ -10,8 +10,9 @@ export type AxisAlignedDirection =
 
 export function isBlockEmpty(block: Block | null): boolean {
   if (!block) return true;
-  // Check for air, water, lava
-  if (block.name === 'air' || block.name === 'water' || block.name === 'lava') return true;
+  // Check for air variants, water, lava
+  if (block.name === 'air' || block.name === 'cave_air' || block.name === 'void_air' ||
+      block.name === 'water' || block.name === 'lava') return true;
   // Check for passable blocks (flowers, tall grass, etc.) which have no collision
   if (block.boundingBox === 'empty') return true;
   return false;
