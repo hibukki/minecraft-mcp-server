@@ -38,7 +38,7 @@ import { tryMiningOneBlock } from "./tryMiningOneBlock.js";
 import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
-import { getDistanceToBlock } from "./getDistance.js";
+import { getDistanceToBlock, getBlockCenter } from "./getDistance.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 
 // ========== Type Definitions ==========
@@ -628,7 +628,10 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetZ: z.number().describe("Target Z coordinate"),
     },
     async ({ targetX, targetY, targetZ }) => {
-      const target = new Vec3(targetX, targetY, targetZ);
+      // Use the center of the target block for accurate distance calculation
+      const targetPos = new Vec3(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
+      const targetBlock = bot.blockAt(targetPos)!;
+      const target = getBlockCenter(targetBlock)
       const startPos = bot.entity.position.clone();
       const initialDistance = startPos.distanceTo(target);
 
@@ -658,8 +661,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
         );
 
-        // Check if we've reached the target (within 1.5 blocks horizontally)
-        if (horizontalDistance <= 1.5) {
+        // Check if we've reached the target (within 0.5 blocks horizontally)
+        if (horizontalDistance <= 0.5) {
           bot.setControlState('forward', false);
           const distanceTraveled = initialDistance - currentDistance;
           return `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
