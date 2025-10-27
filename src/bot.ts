@@ -630,10 +630,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
     async ({ targetX, targetY, targetZ }) => {
       // Use the center of the target block for accurate distance calculation
       const targetPos = new Vec3(Math.floor(targetX), Math.floor(targetY), Math.floor(targetZ));
-      const targetBlock = bot.blockAt(targetPos);
-      const target = targetBlock
-        ? getBlockCenter(targetBlock)
-        : new Vec3(targetPos.x + 0.5, targetPos.y + 0.5, targetPos.z + 0.5);
+      const targetBlock = bot.blockAt(targetPos)!;
+      const target = getBlockCenter(targetBlock)
       const startPos = bot.entity.position.clone();
       const initialDistance = startPos.distanceTo(target);
 
