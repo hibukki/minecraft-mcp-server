@@ -628,7 +628,12 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
       targetZ: z.number().describe("Target Z coordinate"),
     },
     async ({ targetX, targetY, targetZ }) => {
-      const target = new Vec3(targetX, targetY, targetZ);
+      // Use the center of the target block for accurate distance calculation
+      const target = new Vec3(
+        Math.floor(targetX) + 0.5,
+        Math.floor(targetY) + 0.5,
+        Math.floor(targetZ) + 0.5
+      );
       const startPos = bot.entity.position.clone();
       const initialDistance = startPos.distanceTo(target);
 
@@ -658,8 +663,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           Math.pow(currentPos.x - target.x, 2) + Math.pow(currentPos.z - target.z, 2)
         );
 
-        // Check if we've reached the target (within 1.5 blocks horizontally)
-        if (horizontalDistance <= 1.5) {
+        // Check if we've reached the target (within 0.5 blocks horizontally)
+        if (horizontalDistance <= 0.5) {
           bot.setControlState('forward', false);
           const distanceTraveled = initialDistance - currentDistance;
           return `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
