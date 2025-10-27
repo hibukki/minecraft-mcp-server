@@ -660,6 +660,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
         // Check if we've reached the target (within 1.5 blocks horizontally)
         if (horizontalDistance <= 1.5) {
+          bot.setControlState('forward', false);
           const distanceTraveled = initialDistance - currentDistance;
           return `Done traveling horizontally. Traveled ${distanceTraveled.toFixed(1)} blocks in ${attempts} steps. ` +
             `Final distance to target: ${currentDistance.toFixed(1)} blocks. Final horizontal distance (ignoring Y): ${horizontalDistance}. To go up/down (Y), use another tool.`;
@@ -688,12 +689,15 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           ? `${blockAheadOfFeet.name} at ${formatBlockPosition(blockAheadOfFeet.position)}`
           : 'air or null';
 
+        bot.setControlState('forward', false);
         return `Stuck after ${attempts} steps. ` +
           `Traveled: ${distanceTraveled.toFixed(1)} blocks. ` +
           `Remaining: ${distanceRemaining.toFixed(1)} blocks. ` +
           `Block ahead of bot's head: ${headInfo}, ahead of bot's feet: ${feetInfo}. ` +
           `Tried jumping and got: ${jumpResult.error}`;
       }
+
+      bot.setControlState('forward', false);
 
       // Reached MAX_ATTEMPTS
       const endPos = bot.entity.position;
