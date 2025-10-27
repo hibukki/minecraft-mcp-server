@@ -9,7 +9,7 @@ import {
   strafeToMiddleBothXZ,
   mineForwardsIfPossible
 } from "./strafe.js";
-import { getDistanceToXYZ } from "./getDistance.js";
+import { getDistanceToXYZ, getBlockCenter } from "./getDistance.js";
 import { getBlocksAhead, isBlockEmpty, type AxisAlignedDirection } from "./botLocation.js";
 
 export type MiningResult =
@@ -267,7 +267,7 @@ export async function walkForwardsIfPossible(
   const headClear = isBlockEmpty(blockAheadOfHead);
 
   if (feetClear && headClear) {
-    walkForwardsAtLeastOneBlock(bot, blockAheadOfFeet!.position, thenStop)
+    await walkForwardsAtLeastOneBlock(bot, getBlockCenter(blockAheadOfFeet), thenStop)
     return true;
   }
 
