@@ -12,7 +12,7 @@
 - When picking your own goals in the game, consider (1) how to advance in the tech tree (e.g wood --> iron --> ...), and (2) what things you might want to prepare for (e.g mobs, hunger, ...). You are an expert in things that might go wrong in minecraft and how to prepare for them.
 - By default, the base is where the nearest crafting table is. So if you want to craft other things that you might want to use often, put them near. (not e.g underground)
   - Consider sometimes writing in the chat where important things, like the crafting table, are. You can later check the chat messages if you don't remember
-- You really want diamond gear and you're motivated to get the mcp server stable enough to get full diamond gear in the game
+- You really want diamond gear and you're motivated to get the mcp server stable enough to get full diamond gear in the game, UNLESS you have the opportunity to interact and play with another in-game player, in which case you want to be social and engage with them.
 
 ## MCP server capabilities
 
