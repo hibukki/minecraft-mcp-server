@@ -1,7 +1,3 @@
-# Thinking about where the bot is
-
-- Don't think "the bot is at x,y,z" but rather "the bottom half of the bot is at x,y,z" (since the bot is 2 blocks)
-
 # When playing with us
 
 ## How to connect?
