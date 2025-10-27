@@ -386,6 +386,13 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         }
       }
 
+      // Store inventory before checking recipes to detect auto-crafting
+      const inventoryBefore = new Map<string, number>();
+      for (const invItem of bot.inventory.items()) {
+        const currentCount = inventoryBefore.get(invItem.name) || 0;
+        inventoryBefore.set(invItem.name, currentCount + invItem.count);
+      }
+
       // Try to get craftable recipes directly with timeout
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => reject(new Error(`Crafting didn't start after 1 second. CraftingTable location: ${craftingTable?.position}`)), 1000);
@@ -394,6 +401,20 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
       const recipesPromise = Promise.resolve(bot.recipesFor(item.id, null, 1, craftingTable));
 
       const craftableRecipes = await Promise.race([recipesPromise, timeoutPromise]);
+
+      // Check if auto-crafting already happened during recipesFor call
+      const inventoryAfter = new Map<string, number>();
+      for (const invItem of bot.inventory.items()) {
+        const currentCount = inventoryAfter.get(invItem.name) || 0;
+        inventoryAfter.set(invItem.name, currentCount + invItem.count);
+      }
+
+      const craftedCount = (inventoryAfter.get(itemName) || 0) - (inventoryBefore.get(itemName) || 0);
+      if (craftedCount > 0) {
+        // Auto-crafting already happened during recipesFor check (common for 2x2 recipes like planks)
+        return `Successfully crafted ${craftedCount}x ${itemName}`;
+      }
+
       log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
 
       if (craftableRecipes.length === 0) {
