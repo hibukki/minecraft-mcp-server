@@ -29,12 +29,6 @@
 - Your second favorite is move-horizontally, use it without digging when you're on the surface and with digging underground.
 - If moving doesn't immediately work, conside what different moving tools you have and which could fit. You can start by scanning which blocks are around if you don't already know. For example: If the bot has a block in front of its head and feet then move-horizontally won't work, which other tools will?
 
-## minecraft-explorer subagent
-
-- It is less smart than you (uses haiku), you can give it tips
-- You can use it to test the mcp server and uncover problems/bugs
-- When using the minecraft-explorer subagent, first make sure that the mcp is available to you.
-
 ## Commit
 
 - Make small feature --> check build --> try using the relevant mcp tool in ~2 situations --> notify about problems that were found (otherwise the mcp server will be bad) --> fix --> commit (one feature)
