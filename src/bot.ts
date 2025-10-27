@@ -397,8 +397,46 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
       log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
 
       if (craftableRecipes.length === 0) {
-        const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot craft ${itemName}: missing required materials. Inventory: ${inventory}`;
+        // Get detailed recipe information to show what's needed
+        const recipesByResult = mcData.recipes[item.id];
+        const inventory = bot.inventory.items().map((i: Item) => `${i.name}(x${i.count})`).join(', ') || '(empty)';
+
+        if (recipesByResult && recipesByResult.length > 0) {
+          // Show what materials are needed for the first recipe
+          const recipe: any = recipesByResult[0];
+          const ingredients: {[key: string]: number} = {};
+
+          // Parse recipe ingredients
+          if ('inShape' in recipe && recipe.inShape) {
+            // Shaped recipe
+            for (const row of recipe.inShape) {
+              for (const ingredientId of row) {
+                if (ingredientId !== -1 && ingredientId !== null) {
+                  const ingredientItem = mcData.items[ingredientId];
+                  if (ingredientItem) {
+                    ingredients[ingredientItem.name] = (ingredients[ingredientItem.name] || 0) + 1;
+                  }
+                }
+              }
+            }
+          } else if ('ingredients' in recipe && recipe.ingredients) {
+            // Shapeless recipe
+            for (const ingredientId of recipe.ingredients) {
+              if (ingredientId !== -1 && ingredientId !== null) {
+                const ingredientItem = mcData.items[ingredientId];
+                if (ingredientItem) {
+                  ingredients[ingredientItem.name] = (ingredients[ingredientItem.name] || 0) + 1;
+                }
+              }
+            }
+          }
+
+          const needed = Object.entries(ingredients).map(([name, count]) => `${name}(x${count})`).join(', ');
+          const requiresTable = ('requiresTable' in recipe && recipe.requiresTable) ? " (requires crafting table)" : "";
+          return `Cannot craft ${itemName}: missing required materials. Recipe needs: ${needed}${requiresTable}. Current inventory: ${inventory}`;
+        }
+
+        return `Cannot craft ${itemName}: missing required materials or unknown recipe. Inventory: ${inventory}`;
       }
 
       const recipe = craftableRecipes[0];
