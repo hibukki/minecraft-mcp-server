@@ -1539,7 +1539,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
 
       for (const face of faces) {
         const refBlock = bot.blockAt(placePos.plus(face.vec));
-        if (refBlock && !isBlockEmpty(refBlock) /* && bot.canSeeBlock(refBlock) */) {
+        if (refBlock && !isBlockEmpty(refBlock)) {
           try {
             await bot.lookAt(placePos, true);
             await bot.placeBlock(refBlock, face.vec.scaled(-1));
@@ -1551,9 +1551,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         }
       }
 
-      const dist = bot.entity.position.distanceTo(placePos);
-      throw new Error(`Failed to place block at ${formatPosition(placePos)}: No suitable reference block found` +
-        (dist < 1.5 ? `. Distance: ${dist.toFixed(2)} blocks - too close, move away` : ''));
+      throw new Error(`Failed to place block at ${formatPosition(placePos)}: needed adjacent non-empty block`);
     }
   );
 
