@@ -84,7 +84,7 @@ export async function tryMiningOneBlock(
   if (!pathCheck.clear) {
     const blockingInfo = pathCheck.blockingBlocks.length > 0
       ? ` Blocking block(s): ${pathCheck.blockingBlocks.map(b => `${b.name} at ${formatBlockPosition(b.position)}`).join(', ')}`
-      : ' Path is obstructed';
+      : ' Maybe dig those blocks first.';
     return {
       success: false,
       blocksMined: 0,
