@@ -1,30 +1,5 @@
 # MCP Server Issues Found During Diamond Gear Quest
 
-
-## Issue 2: move-horizontally causes unpredictable bot teleportation
-
-**Steps to reproduce:**
-1. Bot position: (20.5, 64.0, 1.5)
-2. Called `move-horizontally` to target (19, 65, 1) - distance of ~1.5 blocks
-3. Function reported "Done traveling horizontally. Traveled 0.1 blocks in 2 steps"
-4. Checked position again
-
-**Expected behavior:**
-Bot should be near target position (19, 65, 1)
-
-**Actual behavior:**
-Bot ended up at (9.3, 64.0, 0.4) - approximately 10 blocks away from starting position in the opposite direction
-
-**Additional observations:**
-- This happened multiple times during the session
-- Bot would frequently end up underwater or in unexpected locations
-- Pattern seems to occur after crafting or other actions
-
-** Suggested fix:**
-- When going to the block, use getBlockCenter, and make sure the bottom of the bot is <0.5 blocks from it
-
----
-
 ## Issue 3: craft-item reports error but successfully crafts items
 
 **Steps to reproduce:**
