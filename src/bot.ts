@@ -39,6 +39,7 @@ import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock, getBlockCenter } from "./getDistance.js";
+import { calculateFuelNeeded, isKnownFuel } from "./fuel.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 
 // ========== Type Definitions ==========
@@ -476,32 +477,15 @@ export function registerSmeltingTools(server: McpServer, bot: Bot) {
           return `Specified fuel '${fuelName}' not found in inventory`;
         }
       } else {
-        // Try common fuels: coal, charcoal, planks, sticks
-        const fuelTypes = ['coal', 'charcoal', 'oak_planks', 'birch_planks', 'spruce_planks', 'stick'];
-        for (const fuelType of fuelTypes) {
-          fuel = bot.inventory.items().find(i => i.name === fuelType);
-          if (fuel) break;
-        }
+        fuel = bot.inventory.items().find(i => isKnownFuel(i.name));
       }
 
       if (!fuel) {
         furnaceBlock.close();
-        return `No fuel found in inventory. Need coal, charcoal, planks, or sticks.`;
+        return `No fuel found in inventory. Need coal, charcoal, planks/logs, or sticks.`;
       }
 
-      // Calculate how much fuel we need (rough estimate: planks smelt ~1.5 items each, coal ~8 items)
-      let fuelNeeded = 1;
-      if (count > 1) {
-        if (fuel.name.includes('plank')) {
-          fuelNeeded = Math.ceil(count / 1.5);
-        } else if (fuel.name === 'coal' || fuel.name === 'charcoal') {
-          fuelNeeded = Math.ceil(count / 8);
-        } else if (fuel.name === 'stick') {
-          fuelNeeded = count; // sticks only smelt 0.5 items each
-        } else {
-          fuelNeeded = count; // conservative default
-        }
-      }
+      const fuelNeeded = calculateFuelNeeded(fuel.name, count);
 
       log("info", `Using ${fuelNeeded}x ${fuel.name} as fuel for ${count} items`);
 

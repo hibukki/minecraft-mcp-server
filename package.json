@@ -10,6 +10,7 @@
     "prepare": "npm run build",
     "build": "tsc",
     "start": "node dist/bot.js",
+    "test": "vitest run",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=100",
     "lint:fix": "eslint \"src/**/*.ts\" --fix"
   },
@@ -33,7 +34,8 @@
     "prismarine-block": "^1.23.0",
     "prismarine-entity": "^2.6.0",
     "prismarine-item": "^1.18.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
   },
   "engines": {
     "node": ">=16.0.0"
