@@ -69,38 +69,17 @@ Example usage: [shared Claude chat](https://claude.ai/share/535d5f69-f102-4cdb-9
 
 ## Available Commands
 
-Once connected to a Minecraft server, Claude can use these commands:
+The authoritative tool list (names, descriptions, parameters) is whatever your MCP client shows after connecting; tools are registered in `src/bot.ts` (see the `register*Tools` functions). Rough map:
 
-### Movement
-- `get-position` - Get the current position of the bot
-- `move-to-position` - Move to specific coordinates
-- `look-at` - Make the bot look at specific coordinates
-- `jump` - Make the bot jump
-- `move-in-direction` - Move in a specific direction for a duration
-
-### Flight
-- `fly-to` - Make the bot fly directly to specific coordinates
-
-### Inventory
-- `list-inventory` - List all items in the bot's inventory
-- `find-item` - Find a specific item in inventory
-- `equip-item` - Equip a specific item
-
-### Block Interaction
-- `place-block` - Place a block at specified coordinates
-- `dig-block` - Dig a block at specified coordinates
-- `get-block-info` - Get information about a block
-- `find-block` - Find the nearest block of a specific type
-
-### Entity Interaction
-- `find-entity` - Find the nearest entity of a specific type
-
-### Communication
-- `send-chat` - Send a chat message in-game
-- `read-chat` - Get recent chat messages from players
-
-### Game State
-- `detect-gamemode` - Detect the gamemode on game
+- **Observation**: `look-around` (one-call snapshot: position, health, inventory, adjacent blocks, entities), `show-adjacent-blocks`, `get-position`, `get-status`, `get-nearby-block-types`, `find-blocks-by-type`, `get-block-info`/`get-blocks-info`
+- **Movement**: `move-horizontally`, stairs up/down (`move-horizontally-and-up/down-using-steps`), `dig-directly-down`, `move-up-by-pillaring`, `swim-horizontally`, `jump-over-obstacle`, `center-in-block`
+- **Mining/building**: `dig-adjacent-blocks`, `place-block`. Mining tools take an `allowMiningOf` tool-to-blocks map — an explicit allowlist so the bot never mines something you didn't intend
+- **Crafting/smelting**: `craft-item`, `smelt-item` (loads the furnace and returns; smelting continues in game time), `furnace-check` (progress + collect output)
+- **Containers**: `chest-peek`, `chest-deposit`, `chest-withdraw`
+- **Inventory/items**: `list-inventory`, `find-item`, `equip-item`, `drop-item`, `eat-food`, `activate-item`
+- **Entities**: `find-entity`, `attack-entity`, `entity-interact`, `entity-mount`/`entity-dismount`, `villager-open`/`villager-trade`
+- **Communication**: `send-chat`, `read-chat`, `player-whisper`
+- **Misc**: `bed-sleep`/`bed-wake`, `fish`, `block-activate`, `sign-update`, `detect-gamemode`
 
 ## Viewing Logs
 
@@ -142,40 +121,14 @@ jq 'select(.level=="error")' logs/minecraft.log
 
 ## Development Setup
 
-To clone and develop this project locally:
-
 ```bash
-# Clone with submodules
-git clone --recurse-submodules https://github.com/hibukki/minecraft-mcp-server.git
+git clone https://github.com/hibukki/minecraft-mcp-server.git
 cd minecraft-mcp-server
-
-# If you already cloned without --recurse-submodules:
-git submodule update --init --recursive
-
-# Install dependencies in main repo
-npm install
-
-# Install dependencies in mineflayer submodule
-cd mineflayer
-npm install
-cd ..
-
-# Build the project
-npm run build
-
-# The bot is now ready to use!
+pnpm install
+pnpm run build
+pnpm test
+pnpm run lint
 ```
-
-### Mineflayer Modifications
-
-This fork uses a modified version of [Mineflayer](https://github.com/PrismarineJS/mineflayer).
-Our fork is located at [hibukki/mineflayer](https://github.com/hibukki/mineflayer) and includes:
-
-- **Reduced timeout**: Default timeout reduced from 20s to 2s for faster failure detection
-- **Crafting table distance check**: Clear error messages when crafting table is out of reach
-- **Progress monitoring helpers**: New `gotoAndVerifyProgress` and `digWithTimeout` functions for better timeout handling
-
-These modifications improve error handling and make the bot more responsive when operations fail.
 
 ## Contributing
 

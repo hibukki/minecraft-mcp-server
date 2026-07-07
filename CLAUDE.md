@@ -3,7 +3,7 @@
 ## How to connect?
 
 - You should have a minecraft mcp server available at mcp__minecraft. If not, let the user know and suggest reconnecting to it.
-- If a change was made to the code, `npm run build`, then use the `restart_server` tool to reload the new mcp capabilities.
+- If a change was made to the code, `pnpm run build`, then reconnect the MCP server so it picks up the new capabilities (in Claude Code: `/mcp` -> reconnect; there is no in-game restart tool).
 
 ## Play style
 
@@ -27,4 +27,4 @@
 
 ## Commit
 
-- Make small feature --> check build --> try using the relevant mcp tool in ~2 situations --> notify about problems that were found (otherwise the mcp server will be bad) --> fix --> commit (one feature)
+- Make small feature --> `pnpm run build` + `pnpm test` --> try using the relevant mcp tool in ~2 situations --> notify about problems that were found (otherwise the mcp server will be bad) --> fix --> commit (one feature)
