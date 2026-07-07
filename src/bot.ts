@@ -795,7 +795,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         // Check if the held item corresponds to a placeable block
         const blockData = mcData.blocksByName[heldItem.name];
         if (!blockData) {
-          return `Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`;
+          throw new Error(`Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`);
         }
 
         const buildingBlockName = heldItem.name;
@@ -814,7 +814,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
               // Try to mine this block using tryMiningOneBlock
               const mineResult = await tryMiningOneBlock(bot, blockAbove, allowMiningOf, 3);
               if (!mineResult.success) {
-                return `Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`;
+                throw new Error(`Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`);
               }
               totalBlocksCleared++;
             }
@@ -823,7 +823,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           // Re-equip the building block (in case we switched to a tool for mining)
           const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
           if (!buildingBlock) {
-            return `Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`;
+            throw new Error(`Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`);
           }
           await bot.equip(buildingBlock, 'hand');
           const beforeY = bot.entity.position.y.toFixed(1);
@@ -840,8 +840,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
             // Check if we still have blocks equipped
             const currentItem = bot.heldItem;
             if (!currentItem) {
-              return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-                `Ran out of blocks to place.`;
+              throw new Error(`Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+                `Ran out of blocks to place.`);
             }
 
             // Check the 3 blocks above the player to see what's blocking
@@ -856,8 +856,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
             const equippedInfo = currentItem ? `${currentItem.name} (x${currentItem.count})` : 'nothing';
 
-            return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`;
+            throw new Error(`Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`);
           }
         }
 
@@ -1126,7 +1126,7 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
       );
 
       if (!item) {
-        return `Couldn't find any item matching '${itemName}' in inventory`;
+        throw new Error(`Couldn't find any item matching '${itemName}' in inventory. Inventory: ${getInventorySummary(bot)}`);
       }
 
       await bot.equip(item, destination as mineflayer.EquipmentDestination);
@@ -1171,15 +1171,15 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
         foodItem = items.find(i => i.name === itemName);
         if (!foodItem) {
           const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-          return `Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`;
+          throw new Error(`Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`);
         }
         if (!(foodItem as any).foodPoints) {
-          return `Cannot eat ${itemName}: not a food item`;
+          throw new Error(`Cannot eat ${itemName}: not a food item`);
         }
       } else {
         foodItem = items.find(i => (i as any).foodPoints);
         if (!foodItem) {
-          return `Cannot eat: no food items in inventory`;
+          throw new Error(`Cannot eat: no food items in inventory`);
         }
       }
 
@@ -1201,7 +1201,7 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
       const heldItem = bot.heldItem;
       if (!heldItem) {
         const hand = offhand ? 'offhand' : 'main hand';
-        return `No item held in ${hand}`;
+        throw new Error(`No item held in ${hand}`);
       }
 
       bot.activateItem(offhand);
@@ -1371,7 +1371,7 @@ export function registerSurvivalTools(server: McpServer, bot: Bot) {
     async () => {
       const heldItem = bot.heldItem;
       if (!heldItem || !heldItem.name.includes('fishing_rod')) {
-        return `No fishing rod equipped in main hand`;
+        throw new Error(`No fishing rod equipped in main hand`);
       }
 
       await bot.fish();
@@ -1682,7 +1682,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       const blocksByName = mcData.blocksByName;
 
       if (!blocksByName[blockType]) {
-        return `Unknown block type: ${blockType}`;
+        throw new Error(`Unknown block type: ${blockType}`);
       }
 
       const blockId = blocksByName[blockType].id;
@@ -1947,7 +1947,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         !entity ||
         bot.entity.position.distanceTo(entity.position) > maxDistance
       ) {
-        return `No ${type || "entity"} found within ${maxDistance} blocks to attack`;
+        throw new Error(`No ${type || "entity"} found within ${maxDistance} blocks to attack`);
       }
 
       const entityName = entity.name || entity.type || "entity";
@@ -1972,12 +1972,12 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
 
         // Check if entity is still close enough
         if (bot.entity.position.distanceTo(entity.position) > maxDistance + 2) {
-          return `${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`;
+          throw new Error(`${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`);
         }
       }
 
       if (attackCount >= maxAttacks) {
-        return `Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`;
+        throw new Error(`Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`);
       }
 
       return `Successfully killed ${entityName} with ${attackCount} attacks at position ${formatBotPosition(initialPos)}`;
@@ -1999,7 +1999,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         : bot.nearestEntity(e => bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType || 'entity'} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
       }
 
       await bot.activateEntity(entity);
@@ -2019,13 +2019,13 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
     async ({ entityType, maxDistance }) => {
       const heldItem = bot.heldItem;
       if (!heldItem) {
-        return `No item held in main hand`;
+        throw new Error(`No item held in main hand`);
       }
 
       const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType} found within ${maxDistance} blocks`);
       }
 
       bot.useOn(entity);
@@ -2046,11 +2046,11 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType} found within ${maxDistance} blocks`);
       }
 
       if (bot.entity.vehicle) {
-        return `Already mounted on ${getEntityName(bot.entity.vehicle)}`;
+        throw new Error(`Already mounted on ${getEntityName(bot.entity.vehicle)}`);
       }
 
       bot.mount(entity);
@@ -2087,7 +2087,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       const entity = bot.nearestEntity(e => e.name === 'villager' && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No villager found within ${maxDistance} blocks`;
+        throw new Error(`No villager found within ${maxDistance} blocks`);
       }
 
       const villager = await bot.openVillager(entity);
@@ -2120,7 +2120,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
     },
     async ({ tradeIndex, times }) => {
       if (!bot.currentWindow) {
-        return `No villager window open. Use villager-open first`;
+        throw new Error(`No villager window open. Use villager-open first`);
       }
 
       await bot.trade(bot.currentWindow as any, tradeIndex, times);
