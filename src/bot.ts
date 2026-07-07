@@ -2236,6 +2236,43 @@ export function registerGameStateTools(server: McpServer, bot: Bot) {
   addServerTool(
     server,
     bot,
+    "look-around",
+    "Get a full situational snapshot in one call: position, health/food, held item, inventory summary, time of day, nearby entities, and all adjacent blocks. Good first call after spawning or when unsure what's going on.",
+    {},
+    async () => {
+      const { botFeetPosition, botHeadPosition, blockUnderBotFeet } = getBotPosition(bot);
+
+      const heldItem = bot.heldItem;
+      const durability = getEquippedItemDurability(bot);
+      let heldText = heldItem ? `${heldItem.name} (x${heldItem.count})` : 'nothing';
+      if (durability) {
+        heldText += ` [durability ${durability.remaining}/${durability.max}]`;
+      }
+
+      const maxEntityDistance = 16;
+      const entityLines: string[] = [];
+      for (const entityId in bot.entities) {
+        const entity = bot.entities[entityId];
+        if (entity === bot.entity) continue;
+        const distance = bot.entity.position.distanceTo(entity.position);
+        if (distance <= maxEntityDistance) {
+          entityLines.push(`${getEntityName(entity)} at ${formatBotPosition(entity.position)} (${distance.toFixed(1)} blocks away)`);
+        }
+      }
+
+      return `Feet: (${botFeetPosition.x}, ${botFeetPosition.y}, ${botFeetPosition.z}), head: (${botHeadPosition.x}, ${botHeadPosition.y}, ${botHeadPosition.z}), standing on: ${blockUnderBotFeet?.name || 'null'}\n` +
+        `Health: ${bot.health}/20, Food: ${bot.food}/20, Oxygen: ${bot.oxygenLevel}/20, Gamemode: ${bot.game.gameMode}\n` +
+        `Held: ${heldText}\n` +
+        `Inventory: ${getInventorySummary(bot) || 'empty'}\n` +
+        `Time: ${bot.time.timeOfDay}/24000 (${bot.time.isDay ? 'day' : 'night'})\n` +
+        `Entities within ${maxEntityDistance} blocks: ${entityLines.length > 0 ? '\n' + entityLines.join('\n') : 'none'}\n\n` +
+        `Adjacent blocks:\n${getAdjacentBlocks(bot)}`;
+    }
+  );
+
+  addServerTool(
+    server,
+    bot,
     "show-adjacent-blocks",
     "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall. Good first call when stuck.",
     {},
