@@ -1867,7 +1867,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         output += `${typeMarker};${item.type};${item.count};${item.distance.toFixed(1)};(${pos.x},${pos.y},${pos.z})\n`;
       });
 
-      output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
+      output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider move-horizontally (same height) or the stairs/dig tools (different height).`
 
       return output.trim();
     }
@@ -2271,17 +2271,16 @@ export function registerGameStateTools(server: McpServer, bot: Bot) {
     }
   );
 
-  // addServerTool(
-  //   server,
-  //   bot,
-  //   "show-adjacent-blocks",
-  //   "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
-  //   {},
-  //   async () => {
-  //     const result = getAdjacentBlocks(bot);
-  //     return result;
-  //   }
-  // );
+  addServerTool(
+    server,
+    bot,
+    "show-adjacent-blocks",
+    "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall. Good first call when stuck.",
+    {},
+    async () => {
+      return getAdjacentBlocks(bot);
+    }
+  );
 }
 
 // ========== Main Application ==========
