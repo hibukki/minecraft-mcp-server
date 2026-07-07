@@ -40,6 +40,7 @@ import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock, getBlockCenter } from "./getDistance.js";
 import { calculateFuelNeeded, estimatedSmeltSeconds, isKnownFuel } from "./fuel.js";
+import { describeWhyUncraftable, getInventorySummary } from "./craftingDiagnostics.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 
 // ========== Type Definitions ==========
@@ -215,13 +216,6 @@ function formatPosition(pos: Vec3): string {
 }
 
 /**
- * Get summary of inventory contents
- */
-function getInventorySummary(bot: Bot): string {
-  return bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-}
-
-/**
  * Get entity name, falling back to type or unknown_entity
  */
 function getEntityName(entity: Entity): string {
@@ -349,7 +343,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
 
       const item = itemsByName[itemName];
       if (!item) {
-        return `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`;
+        throw new Error(`Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`);
       }
 
       let craftingTable = null;
@@ -362,7 +356,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         });
 
         if (!craftingTable) {
-          return `Cannot craft ${itemName}: crafting table required but none found within 32 blocks. Place a crafting table nearby.`;
+          throw new Error(`Cannot craft ${itemName}: crafting table required but none found within 32 blocks. Place a crafting table nearby.`);
         }
 
         log("info", `Found crafting table at ${craftingTable.position}`);
@@ -370,7 +364,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         const distanceToCraftingTable = getDistanceToBlock(bot, craftingTable);
 
         if (distanceToCraftingTable > 3) {
-          return `Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`;
+          throw new Error(`Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`);
         }
       }
 
@@ -385,8 +379,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
       log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
 
       if (craftableRecipes.length === 0) {
-        const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot craft ${itemName}: missing required materials. Inventory: ${inventory}`;
+        throw new Error(`Cannot craft ${itemName}: ${describeWhyUncraftable(bot, item.id, craftingTable)}`);
       }
 
       const recipe = craftableRecipes[0];
@@ -1543,12 +1536,17 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
     async ({ positions, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }) => {
       const digTimeout = timeoutSeconds ?? 3;
       let dugCount = 0;
+      let skippedEmpty = 0;
       let lastError: string | undefined;
 
-      for (let i = 0; i < positions.length; i++) {
-        const { x, y, z } = positions[i];
+      for (const { x, y, z } of positions) {
         const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos)!;
+        const block = bot.blockAt(blockPos);
+
+        if (!block || isBlockEmpty(block)) {
+          skippedEmpty++;
+          continue;
+        }
 
         const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
@@ -1560,12 +1558,11 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         dugCount++;
       }
 
-      const totalBlocks = positions.length;
-      if (dugCount === totalBlocks) {
-        return `Dug ${dugCount} block${dugCount === 1 ? '' : 's'}`;
-      } else {
-        return `Dug ${dugCount}/${totalBlocks} blocks. Error on block ${dugCount + 1}: ${lastError}`;
+      const skippedMessage = skippedEmpty > 0 ? ` (skipped ${skippedEmpty} already-empty position${skippedEmpty === 1 ? '' : 's'})` : '';
+      if (lastError) {
+        throw new Error(`Dug ${dugCount}/${positions.length - skippedEmpty} blocks${skippedMessage}. Then got error: ${lastError}`);
       }
+      return `Dug ${dugCount} block${dugCount === 1 ? '' : 's'}${skippedMessage}`;
     }
   );
 
