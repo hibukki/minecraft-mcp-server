@@ -469,14 +469,20 @@ export function registerSmeltingTools(server: McpServer, bot: Bot) {
       if (fuelName) {
         fuel = expectItemInInventory(bot, fuelName);
       } else {
-        const autoFuel = bot.inventory.items().find(i => isKnownFuel(i.name));
+        // Prefer fuel that isn't also the item being smelted (e.g. logs -> charcoal using logs as fuel)
+        const autoFuel = bot.inventory.items().find(i => isKnownFuel(i.name) && i.type !== botInputItem.type)
+          ?? bot.inventory.items().find(i => isKnownFuel(i.name));
         if (!autoFuel) {
           throw new Error(`No fuel found in inventory. Need coal, charcoal, planks/logs, or sticks. Inventory: ${getInventorySummary(bot)}`);
         }
         fuel = autoFuel;
       }
       const fuelNeeded = calculateFuelNeeded(fuel.name, count);
-      expectSufficientItems(fuel, fuelNeeded);
+      if (fuel.type === botInputItem.type) {
+        expectSufficientItems(botInputItem, count + fuelNeeded);
+      } else {
+        expectSufficientItems(fuel, fuelNeeded);
+      }
 
       const furnaceBlock = findFurnaceWithinReach(bot);
       closeCurrentWindowIfAny(bot);
