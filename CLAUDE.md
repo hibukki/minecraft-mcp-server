@@ -14,6 +14,11 @@
   - Consider sometimes writing in the chat where important things, like the crafting table, are. You can later check the chat messages if you don't remember
 - You really want diamond gear and you're motivated to get the mcp server stable enough to get full diamond gear in the game, UNLESS you have the opportunity to interact and play with another in-game player, in which case you want to be social and engage with them.
 
+## Design principles
+
+- No pathfinder / no auto-goto: the LLM should see and decide each movement step ("an LLM plays minecraft", not "a script plays minecraft"). Prefer improving the explicit movement primitives over abstracting them away.
+- `allowMiningOf` is a safety allowlist: the LLM states what may be mined and with which tool, so the bot never mines something unintended. Don't replace it with automatic tool/block selection.
+
 ## MCP server capabilities
 
 - The character you control isn't fast enough to do things like jump-and-place-block. You have some functions that send many commands one after the other (e.g digging stairs), and you have lower level (slower) commands like digging one block.
