@@ -24,17 +24,18 @@
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.7.2",
     "@types/vec3": "^0.1.4",
     "@types/winston": "^2.4.4",
     "@types/yargs": "^17.0.33",
-    "@typescript-eslint/eslint-plugin": "^8.46.1",
-    "@typescript-eslint/parser": "^8.46.1",
     "eslint": "^9.37.0",
+    "globals": "^17.7.0",
     "prismarine-block": "^1.23.0",
     "prismarine-entity": "^2.6.0",
     "prismarine-item": "^1.18.0",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.63.0",
     "vitest": "^4.1.10"
   },
   "engines": {

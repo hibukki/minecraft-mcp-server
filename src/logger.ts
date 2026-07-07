@@ -10,12 +10,7 @@ const __dirname = path.dirname(__filename);
 // When running from dist/, go up once to project root: dist/ -> project root
 const logsDir = path.join(__dirname, '..', 'logs');
 
-// Ensure logs directory exists
-try {
-  mkdirSync(logsDir, { recursive: true });
-} catch (err) {
-  // Directory might already exist, ignore error
-}
+mkdirSync(logsDir, { recursive: true });
 
 // Winston logger configuration
 const logger = winston.createLogger({
