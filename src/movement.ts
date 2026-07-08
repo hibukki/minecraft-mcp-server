@@ -158,6 +158,13 @@ export async function waitToLandFromAir(bot: Bot): Promise<void> {
   await new Promise(r => setTimeout(r, 300)); // Wait to land
 }
 
+export async function waitUntilOnGround(bot: Bot, timeoutMs: number = 1500): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!bot.entity.onGround && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 50));
+  }
+}
+
 // ========== Small Obstacle Jump ==========
 
 export type JumpResult =
@@ -565,8 +572,9 @@ export async function mineDownOneStep(
   await new Promise(r => setTimeout(r, 300));
   bot.setControlState('forward', false);
 
-  // Wait a moment to settle
-  await new Promise(r => setTimeout(r, 200));
+  // Let the fall start, then wait for landing so the Y check doesn't run mid-air
+  await new Promise(r => setTimeout(r, 150));
+  await waitUntilOnGround(bot);
 
   // Verify we ended up at the right position (on the lowest block)
   const finalPos = bot.entity.position;

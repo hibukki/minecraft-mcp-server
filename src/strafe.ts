@@ -1,6 +1,5 @@
 import type { Bot } from "mineflayer";
 import { Vec3 } from "vec3";
-import { appendFileSync } from "fs";
 import {
   getBotAxisAlignedDirection,
   type MineForwardResult,
@@ -123,9 +122,7 @@ export async function strafeToMiddle(bot: Bot): Promise<void> {
   // After MAX_ATTEMPTS, check if we're close enough
   const finalCheck = getStrafeDirectionAndAmount(bot);
   if (finalCheck && Math.abs(finalCheck.amount) > 0.2) {
-    const errorMsg = `Failed to center after ${MAX_ATTEMPTS} attempts: still ${finalCheck.amount.toFixed(2)}b from center`;
-    appendFileSync('strafe_log.txt', errorMsg + '\n');
-    throw new Error(errorMsg);
+    throw new Error(`Failed to center after ${MAX_ATTEMPTS} attempts: still ${finalCheck.amount.toFixed(2)}b from center`);
   }
 }
 

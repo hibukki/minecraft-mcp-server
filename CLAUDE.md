@@ -3,7 +3,7 @@
 ## How to connect?
 
 - You should have a minecraft mcp server available at mcp__minecraft. If not, let the user know and suggest reconnecting to it.
-- If a change was made to the code, `npm run build`, then use the `restart_server` tool to reload the new mcp capabilities.
+- If a change was made to the code, `pnpm run build`, then reconnect the MCP server so it picks up the new capabilities (in Claude Code: `/mcp` -> reconnect; there is no in-game restart tool).
 
 ## Play style
 
@@ -13,6 +13,11 @@
 - By default, the base is where the nearest crafting table is. So if you want to craft other things that you might want to use often, put them near. (not e.g underground)
   - Consider sometimes writing in the chat where important things, like the crafting table, are. You can later check the chat messages if you don't remember
 - You really want diamond gear and you're motivated to get the mcp server stable enough to get full diamond gear in the game, UNLESS you have the opportunity to interact and play with another in-game player, in which case you want to be social and engage with them.
+
+## Design principles
+
+- No pathfinder / no auto-goto: the LLM should see and decide each movement step ("an LLM plays minecraft", not "a script plays minecraft"). Prefer improving the explicit movement primitives over abstracting them away.
+- `allowMiningOf` is a safety allowlist: the LLM states what may be mined and with which tool, so the bot never mines something unintended. Don't replace it with automatic tool/block selection.
 
 ## MCP server capabilities
 
@@ -27,4 +32,4 @@
 
 ## Commit
 
-- Make small feature --> check build --> try using the relevant mcp tool in ~2 situations --> notify about problems that were found (otherwise the mcp server will be bad) --> fix --> commit (one feature)
+- Make small feature --> `pnpm run build` + `pnpm test` --> try using the relevant mcp tool in ~2 situations --> notify about problems that were found (otherwise the mcp server will be bad) --> fix --> commit (one feature)

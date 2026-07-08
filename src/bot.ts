@@ -39,6 +39,8 @@ import { formatError, log } from "./bot_log.js";
 import logger, { logToolCall, logGameEvent } from "./logger.js";
 import { getOptionalNewsFyi } from "./news.js";
 import { getDistanceToBlock, getBlockCenter } from "./getDistance.js";
+import { calculateFuelNeeded, estimatedSmeltSeconds, isKnownFuel } from "./fuel.js";
+import { describeWhyUncraftable, getInventorySummary } from "./craftingDiagnostics.js";
 import { messageStore, MAX_STORED_MESSAGES } from "./chatMessages.js";
 
 // ========== Type Definitions ==========
@@ -198,19 +200,6 @@ async function equipItem(bot: Bot, itemName: string, destination: 'hand' | 'head
 }
 
 /**
- * Find entity matching criteria or throw error
- */
-function expectEntity(bot: Bot, entityType: string | undefined, maxDistance: number, filter?: (entity: Entity) => boolean): Entity {
-  const entityFilter = filter || ((e: Entity) => !entityType || e.name === entityType);
-  const entity = bot.nearestEntity(e => entityFilter(e) && bot.entity.position.distanceTo(e.position) <= maxDistance);
-
-  if (!entity) {
-    throw new Error(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
-  }
-  return entity;
-}
-
-/**
  * Validate item has sufficient count
  */
 function expectSufficientItems(item: Item, needed: number): void {
@@ -224,13 +213,6 @@ function expectSufficientItems(item: Item, needed: number): void {
  */
 function formatPosition(pos: Vec3): string {
   return `(${pos.x}, ${pos.y}, ${pos.z})`;
-}
-
-/**
- * Get summary of inventory contents
- */
-function getInventorySummary(bot: Bot): string {
-  return bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
 }
 
 /**
@@ -361,7 +343,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
 
       const item = itemsByName[itemName];
       if (!item) {
-        return `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`;
+        throw new Error(`Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'oak_planks', 'crafting_table')`);
       }
 
       let craftingTable = null;
@@ -374,7 +356,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         });
 
         if (!craftingTable) {
-          return `Cannot craft ${itemName}: crafting table required but none found within 32 blocks. Place a crafting table nearby.`;
+          throw new Error(`Cannot craft ${itemName}: crafting table required but none found within 32 blocks. Place a crafting table nearby.`);
         }
 
         log("info", `Found crafting table at ${craftingTable.position}`);
@@ -382,7 +364,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
         const distanceToCraftingTable = getDistanceToBlock(bot, craftingTable);
 
         if (distanceToCraftingTable > 3) {
-          return `Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`;
+          throw new Error(`Crafting table too far (distance: ${distanceToCraftingTable.toFixed(1)}, location: ${craftingTable?.position}). Move closer (within ~3 blocks).`);
         }
       }
 
@@ -397,8 +379,7 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
       log("info", `bot.recipesFor returned ${craftableRecipes.length} craftable recipes for ${itemName} (with table: ${!!craftingTable})`);
 
       if (craftableRecipes.length === 0) {
-        const inventory = bot.inventory.items().map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot craft ${itemName}: missing required materials. Inventory: ${inventory}`;
+        throw new Error(`Cannot craft ${itemName}: ${describeWhyUncraftable(bot, item.id, craftingTable)}`);
       }
 
       const recipe = craftableRecipes[0];
@@ -410,12 +391,61 @@ export function registerCraftingTools(server: McpServer, bot: Bot) {
 
 // ========== Smelting Tools ==========
 
+type Furnace = Awaited<ReturnType<Bot["openFurnace"]>>;
+
+// A window left open by an earlier tool call desyncs later container operations
+function closeCurrentWindowIfAny(bot: Bot): void {
+  if (bot.currentWindow) {
+    bot.closeWindow(bot.currentWindow);
+  }
+}
+
+function formatContainerItem(item: Item | null): string {
+  return item ? `${item.count}x ${item.name}` : "empty";
+}
+
+function describeFurnaceContents(furnace: Furnace): string {
+  let text = `input=${formatContainerItem(furnace.inputItem())}, ` +
+    `fuel=${formatContainerItem(furnace.fuelItem())}, ` +
+    `output=${formatContainerItem(furnace.outputItem())}`;
+  if (furnace.fuel != null) {
+    text += `, fuel_burning=${(furnace.fuel * 100).toFixed(0)}%`;
+  }
+  if (furnace.progress != null) {
+    text += `, current_item_progress=${(furnace.progress * 100).toFixed(0)}%`;
+  }
+  return text;
+}
+
+function findFurnaceWithinReach(bot: Bot, position?: Vec3): Block {
+  let furnace: Block;
+  if (position) {
+    furnace = expectBlockOfType(bot, position, 'furnace');
+  } else {
+    const mcData = minecraftData(bot.version);
+    const found = bot.findBlock({
+      matching: mcData.blocksByName.furnace?.id,
+      maxDistance: 32,
+    });
+    if (!found) {
+      throw new Error(`No furnace found within 32 blocks. Place a furnace nearby.`);
+    }
+    furnace = found;
+  }
+
+  const distance = getDistanceToBlock(bot, furnace);
+  if (distance > 4) {
+    throw new Error(`Furnace at ${formatPosition(furnace.position)} is too far (${distance.toFixed(1)} blocks). Move within ~4 blocks.`);
+  }
+  return furnace;
+}
+
 export function registerSmeltingTools(server: McpServer, bot: Bot) {
   addServerTool(
     server,
     bot,
     "smelt-item",
-    "Smelt an item using a furnace",
+    "Load a furnace with items and fuel and start smelting. Returns once the furnace is lit; use furnace-check later to see progress and collect the output.",
     {
       itemName: z
         .string()
@@ -425,130 +455,86 @@ export function registerSmeltingTools(server: McpServer, bot: Bot) {
       fuelName: z
         .string()
         .optional()
-        .describe("Name of fuel to use (e.g., 'coal', 'planks'). If not provided, will use available fuel."),
+        .describe("Name of fuel to use (e.g., 'coal', 'oak_planks'). If not provided, will use any known fuel in inventory."),
       count: z
         .number()
         .optional()
         .describe("Number of items to smelt (default: 1)"),
     },
     async ({ itemName, fuelName, count = 1 }) => {
-      const mcData = minecraftData(bot.version);
-      const itemsByName = mcData.itemsByName;
+      const botInputItem = expectItemInInventory(bot, itemName);
+      expectSufficientItems(botInputItem, count);
 
-      // Validate input item exists
-      const inputItem = itemsByName[itemName];
-      if (!inputItem) {
-        return `Unknown item: ${itemName}. Make sure to use the exact item name (e.g., 'raw_iron', 'sand')`;
-      }
-
-      // Check if bot has the input item
-      const botInputItem = bot.inventory.items().find(i => i.name === itemName);
-      if (!botInputItem || botInputItem.count < count) {
-        return `Not enough ${itemName} in inventory. Have: ${botInputItem?.count || 0}, Need: ${count}`;
-      }
-
-      // Find a furnace
-      const furnace = bot.findBlock({
-        matching: mcData.blocksByName.furnace?.id,
-        maxDistance: 32,
-      });
-
-      if (!furnace) {
-        return `No furnace found within 32 blocks. Place a furnace nearby.`;
-      }
-
-      log("info", `Found furnace at ${furnace.position}`);
-
-      // Move to furnace if needed
-      if (!bot.canSeeBlock(furnace)) {
-        return `Furnace found at (${furnace.position.x}, ${furnace.position.y}, ${furnace.position.z}) but it's not visible. Move closer manually using move-in-direction tool.`;
-      }
-
-      // Open the furnace
-      const furnaceBlock = await bot.openFurnace(furnace);
-
-      // Find fuel
-      let fuel = null;
+      let fuel: Item;
       if (fuelName) {
-        fuel = bot.inventory.items().find(i => i.name === fuelName);
-        if (!fuel) {
-          furnaceBlock.close();
-          return `Specified fuel '${fuelName}' not found in inventory`;
-        }
+        fuel = expectItemInInventory(bot, fuelName);
       } else {
-        // Try common fuels: coal, charcoal, planks, sticks
-        const fuelTypes = ['coal', 'charcoal', 'oak_planks', 'birch_planks', 'spruce_planks', 'stick'];
-        for (const fuelType of fuelTypes) {
-          fuel = bot.inventory.items().find(i => i.name === fuelType);
-          if (fuel) break;
+        // Prefer fuel that isn't also the item being smelted (e.g. logs -> charcoal using logs as fuel)
+        const autoFuel = bot.inventory.items().find(i => isKnownFuel(i.name) && i.type !== botInputItem.type)
+          ?? bot.inventory.items().find(i => isKnownFuel(i.name));
+        if (!autoFuel) {
+          throw new Error(`No fuel found in inventory. Need coal, charcoal, planks/logs, or sticks. Inventory: ${getInventorySummary(bot)}`);
         }
+        fuel = autoFuel;
       }
-
-      if (!fuel) {
-        furnaceBlock.close();
-        return `No fuel found in inventory. Need coal, charcoal, planks, or sticks.`;
-      }
-
-      // Calculate how much fuel we need (rough estimate: planks smelt ~1.5 items each, coal ~8 items)
-      let fuelNeeded = 1;
-      if (count > 1) {
-        if (fuel.name.includes('plank')) {
-          fuelNeeded = Math.ceil(count / 1.5);
-        } else if (fuel.name === 'coal' || fuel.name === 'charcoal') {
-          fuelNeeded = Math.ceil(count / 8);
-        } else if (fuel.name === 'stick') {
-          fuelNeeded = count; // sticks only smelt 0.5 items each
-        } else {
-          fuelNeeded = count; // conservative default
-        }
-      }
-
-      log("info", `Using ${fuelNeeded}x ${fuel.name} as fuel for ${count} items`);
-
-      // Put items in furnace
-      await furnaceBlock.putInput(botInputItem.type, null, count);
-      await furnaceBlock.putFuel(fuel.type, null, fuelNeeded);
-
-      // Wait for smelting to complete
-      // Each item takes about 10 seconds to smelt
-      const smeltTime = count * 10 * 1000;
-      log("info", `Waiting ${smeltTime / 1000}s for smelting to complete...`);
-      await new Promise(resolve => setTimeout(resolve, smeltTime));
-
-      // Take output if available
-      const output = furnaceBlock.outputItem();
-      if (output) {
-        await furnaceBlock.takeOutput();
-        furnaceBlock.close();
-        return `Successfully smelted ${count}x ${itemName} using ${fuel.name} as fuel`;
+      const fuelNeeded = calculateFuelNeeded(fuel.name, count);
+      if (fuel.type === botInputItem.type) {
+        expectSufficientItems(botInputItem, count + fuelNeeded);
       } else {
-        // Check full furnace state to give detailed error
-        const inputStillThere = furnaceBlock.inputItem();
-        const fuelStillThere = furnaceBlock.fuelItem();
-        const progress = (furnaceBlock as any).progress;
-        const progressSeconds = (furnaceBlock as any).progressSeconds;
-        const fuelRemaining = (furnaceBlock as any).fuel;
-        const fuelSeconds = (furnaceBlock as any).fuelSeconds;
-        furnaceBlock.close();
+        expectSufficientItems(fuel, fuelNeeded);
+      }
 
-        let errorMsg = `Smelting failed: No output found after waiting ${smeltTime / 1000}s.\n`;
-        errorMsg += `Furnace state:\n`;
-        errorMsg += `  Input: ${inputStillThere ? `${inputStillThere.count}x ${inputStillThere.name}` : 'empty'}\n`;
-        errorMsg += `  Fuel: ${fuelStillThere ? `${fuelStillThere.count}x ${fuelStillThere.name}` : 'empty'}\n`;
-        errorMsg += `  Output: empty\n`;
-        errorMsg += `  Progress: ${progress !== null ? (progress * 100).toFixed(1) : 'unknown'}%`;
-        if (progressSeconds !== null) {
-          errorMsg += ` (${progressSeconds.toFixed(1)}s remaining)`;
-        }
-        errorMsg += `\n`;
-        errorMsg += `  Fuel: ${fuelRemaining !== null ? (fuelRemaining * 100).toFixed(1) : 'unknown'}%`;
-        if (fuelSeconds !== null) {
-          errorMsg += ` (${fuelSeconds.toFixed(1)}s remaining)`;
-        }
-        errorMsg += `\n`;
-        errorMsg += `Likely causes: (1) Fuel ran out mid-smelt, (2) Need to wait longer, (3) Items already taken.`;
+      const furnaceBlock = findFurnaceWithinReach(bot);
+      closeCurrentWindowIfAny(bot);
+      const furnace = await bot.openFurnace(furnaceBlock);
+      try {
+        await furnace.putInput(botInputItem.type, null, count);
+        await furnace.putFuel(fuel.type, null, fuelNeeded);
 
-        return errorMsg;
+        // Give the furnace a moment to light so the reported state is meaningful
+        await new Promise(resolve => setTimeout(resolve, 2500));
+
+        return `Loaded furnace at ${formatPosition(furnaceBlock.position)} with ${count}x ${itemName} and ${fuelNeeded}x ${fuel.name}. ` +
+          `State: ${describeFurnaceContents(furnace)}. ` +
+          `Smelting takes ~${estimatedSmeltSeconds(count)}s total; use furnace-check to collect the output.`;
+      } finally {
+        furnace.close();
+      }
+    }
+  );
+
+  addServerTool(
+    server,
+    bot,
+    "furnace-check",
+    "Check furnace state (input/fuel/output/progress) and collect any smelted output into the inventory",
+    {
+      x: z.number().optional().describe("Furnace X coordinate (default: nearest furnace)"),
+      y: z.number().optional().describe("Furnace Y coordinate"),
+      z: z.number().optional().describe("Furnace Z coordinate"),
+    },
+    async ({ x, y, z }) => {
+      const positionGiven = x !== undefined || y !== undefined || z !== undefined;
+      if (positionGiven && (x === undefined || y === undefined || z === undefined)) {
+        throw new Error(`Provide all of x, y, z or none (got x=${x}, y=${y}, z=${z})`);
+      }
+
+      const furnaceBlock = findFurnaceWithinReach(bot, positionGiven ? new Vec3(x!, y!, z!) : undefined);
+      closeCurrentWindowIfAny(bot);
+      const furnace = await bot.openFurnace(furnaceBlock);
+      try {
+        // Progress/fuel packets arrive shortly after the window opens
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        const output = furnace.outputItem();
+        let collectedMessage = '';
+        if (output) {
+          await furnace.takeOutput();
+          collectedMessage = `Collected ${output.count}x ${output.name} into inventory. `;
+        }
+        return `${collectedMessage}Furnace at ${formatPosition(furnaceBlock.position)}: ${describeFurnaceContents(furnace)}`;
+      } finally {
+        furnace.close();
       }
     }
   );
@@ -815,7 +801,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         // Check if the held item corresponds to a placeable block
         const blockData = mcData.blocksByName[heldItem.name];
         if (!blockData) {
-          return `Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`;
+          throw new Error(`Cannot pillar with ${heldItem.name}. Please equip a placeable block (e.g., cobblestone, dirt) in hand.`);
         }
 
         const buildingBlockName = heldItem.name;
@@ -834,7 +820,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
               // Try to mine this block using tryMiningOneBlock
               const mineResult = await tryMiningOneBlock(bot, blockAbove, allowMiningOf, 3);
               if (!mineResult.success) {
-                return `Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`;
+                throw new Error(`Failed to pillar up: blocked at Y+${yOffset} by ${blockAbove.name} after ${blocksPlaced} blocks placed. Mining next block up got error: ${mineResult.error}`);
               }
               totalBlocksCleared++;
             }
@@ -843,7 +829,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
           // Re-equip the building block (in case we switched to a tool for mining)
           const buildingBlock = bot.inventory.items().find(item => item.name === buildingBlockName);
           if (!buildingBlock) {
-            return `Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`;
+            throw new Error(`Failed to pillar up: lost ${buildingBlockName} from inventory after ${blocksPlaced} blocks placed, because didn't find ${buildingBlockName} in inventory.`);
           }
           await bot.equip(buildingBlock, 'hand');
           const beforeY = bot.entity.position.y.toFixed(1);
@@ -860,8 +846,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
             // Check if we still have blocks equipped
             const currentItem = bot.heldItem;
             if (!currentItem) {
-              return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-                `Ran out of blocks to place.`;
+              throw new Error(`Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+                `Ran out of blocks to place.`);
             }
 
             // Check the 3 blocks above the player to see what's blocking
@@ -876,8 +862,8 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
 
             const equippedInfo = currentItem ? `${currentItem.name} (x${currentItem.count})` : 'nothing';
 
-            return `Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
-              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`;
+            throw new Error(`Failed to pillar up: stuck at Y=${afterY} after ${blocksPlaced} blocks placed. ` +
+              `Equipped: ${equippedInfo}. Blocks above: ${blocksAbove.join(', ')}`);
           }
         }
 
@@ -958,7 +944,7 @@ export function registerPositionTools(server: McpServer, bot: Bot) {
         return `Successfully mined ${totalBlocksMined} block(s) and traveled ${distTraveled.toFixed(1)} blocks forward`;
       } catch (error) {
         const distTraveled = startPos.distanceTo(bot.entity.position);
-        throw new Error(`${formatError(error)}. Progress: mined ${totalBlocksMined} block(s), traveled ${distTraveled.toFixed(1)} blocks`);
+        throw new Error(`${formatError(error)}. Progress: mined ${totalBlocksMined} block(s), traveled ${distTraveled.toFixed(1)} blocks`, { cause: error });
       }
     }
   );
@@ -1146,7 +1132,7 @@ export function registerInventoryTools(server: McpServer, bot: Bot) {
       );
 
       if (!item) {
-        return `Couldn't find any item matching '${itemName}' in inventory`;
+        throw new Error(`Couldn't find any item matching '${itemName}' in inventory. Inventory: ${getInventorySummary(bot)}`);
       }
 
       await bot.equip(item, destination as mineflayer.EquipmentDestination);
@@ -1191,15 +1177,15 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
         foodItem = items.find(i => i.name === itemName);
         if (!foodItem) {
           const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-          return `Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`;
+          throw new Error(`Cannot eat ${itemName}: not found in inventory. Inventory: ${inventory}`);
         }
         if (!(foodItem as any).foodPoints) {
-          return `Cannot eat ${itemName}: not a food item`;
+          throw new Error(`Cannot eat ${itemName}: not a food item`);
         }
       } else {
         foodItem = items.find(i => (i as any).foodPoints);
         if (!foodItem) {
-          return `Cannot eat: no food items in inventory`;
+          throw new Error(`Cannot eat: no food items in inventory`);
         }
       }
 
@@ -1221,7 +1207,7 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
       const heldItem = bot.heldItem;
       if (!heldItem) {
         const hand = offhand ? 'offhand' : 'main hand';
-        return `No item held in ${hand}`;
+        throw new Error(`No item held in ${hand}`);
       }
 
       bot.activateItem(offhand);
@@ -1247,12 +1233,29 @@ export function registerItemActionTools(server: McpServer, bot: Bot) {
 
 // ========== Container Tools ==========
 
+async function openChestWithinReach(bot: Bot, pos: Vec3) {
+  const block = expectBlockOfType(bot, pos, 'chest');
+  const distance = getDistanceToBlock(bot, block);
+  if (distance > 4) {
+    throw new Error(`Chest at ${formatPosition(pos)} is too far (${distance.toFixed(1)} blocks). Move within ~4 blocks.`);
+  }
+  closeCurrentWindowIfAny(bot);
+  return bot.openChest(block);
+}
+
+function formatChestContents(chest: { containerItems(): Item[] }): string {
+  const items = chest.containerItems();
+  return items.length > 0
+    ? items.map(i => `${i.name}(x${i.count})`).join(', ')
+    : 'empty';
+}
+
 export function registerContainerTools(server: McpServer, bot: Bot) {
   addServerTool(
     server,
     bot,
-    "chest-open",
-    "Open a chest at the specified position",
+    "chest-peek",
+    "Look at the contents of a chest at the specified position",
     {
       x: z.number().describe("X coordinate"),
       y: z.number().describe("Y coordinate"),
@@ -1260,106 +1263,67 @@ export function registerContainerTools(server: McpServer, bot: Bot) {
     },
     async ({ x, y, z }) => {
       const pos = new Vec3(x, y, z);
-      const block = expectBlockOfType(bot, pos, 'chest');
-
-      const chest = await bot.openChest(block);
-      const items = chest.containerItems();
-      const itemsSummary = items.length > 0
-        ? items.map(i => `${i.name}(x${i.count})`).join(', ')
-        : 'empty';
-
-      return `Opened chest at ${formatPosition(pos)}. Contents: ${itemsSummary}`;
-    }
-  );
-
-  addServerTool(
-    server,
-    bot,
-    "furnace-open",
-    "Open furnace interface for direct interaction",
-    {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
-    },
-    async ({ x, y, z }) => {
-      const pos = new Vec3(x, y, z);
-      const block = expectBlockOfType(bot, pos, 'furnace');
-      await bot.openFurnace(block);
-      return `Opened furnace at ${formatPosition(pos)}`;
-    }
-  );
-
-  addServerTool(
-    server,
-    bot,
-    "enchantment-table-open",
-    "Open enchantment table interface",
-    {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
-    },
-    async ({ x, y, z }) => {
-      const pos = new Vec3(x, y, z);
-      const block = expectBlockOfType(bot, pos, 'enchanting_table');
-      await bot.openEnchantmentTable(block);
-      return `Opened enchantment table at ${formatPosition(pos)}`;
-    }
-  );
-
-  addServerTool(
-    server,
-    bot,
-    "anvil-open",
-    "Open anvil for repairs and renaming",
-    {
-      x: z.number().describe("X coordinate"),
-      y: z.number().describe("Y coordinate"),
-      z: z.number().describe("Z coordinate"),
-    },
-    async ({ x, y, z }) => {
-      const pos = new Vec3(x, y, z);
-      const block = expectBlockOfType(bot, pos, 'anvil');
-      await bot.openAnvil(block);
-      return `Opened anvil at ${formatPosition(pos)}`;
-    }
-  );
-
-  addServerTool(
-    server,
-    bot,
-    "transfer-items",
-    "Transfer items between inventory slots or containers",
-    {
-      itemName: z.string().describe("Name of the item to transfer"),
-      count: z.number().describe("Number of items to transfer"),
-      fromSlot: z.number().optional().describe("Source slot number"),
-      toSlot: z.number().optional().describe("Destination slot number"),
-    },
-    async ({ itemName, count, fromSlot, toSlot }) => {
-      const items = bot.inventory.items();
-      const item = items.find(i => i.name === itemName);
-
-      if (!item) {
-        const inventory = items.map(i => `${i.name}(x${i.count})`).join(', ');
-        return `Cannot transfer ${itemName}: not found in inventory. Inventory: ${inventory}`;
+      const chest = await openChestWithinReach(bot, pos);
+      try {
+        return `Chest at ${formatPosition(pos)} contains: ${formatChestContents(chest)}`;
+      } finally {
+        chest.close();
       }
+    }
+  );
 
-      if (item.count < count) {
-        return `Cannot transfer ${count}x ${itemName}: only have ${item.count}`;
+  addServerTool(
+    server,
+    bot,
+    "chest-deposit",
+    "Put items from the inventory into a chest",
+    {
+      x: z.number().describe("Chest X coordinate"),
+      y: z.number().describe("Chest Y coordinate"),
+      z: z.number().describe("Chest Z coordinate"),
+      itemName: z.string().describe("Name of the item to deposit"),
+      count: z.number().describe("Number of items to deposit"),
+    },
+    async ({ x, y, z, itemName, count }) => {
+      const item = expectItemInInventory(bot, itemName);
+      expectSufficientItems(item, count);
+
+      const pos = new Vec3(x, y, z);
+      const chest = await openChestWithinReach(bot, pos);
+      try {
+        await chest.deposit(item.type, null, count);
+        return `Deposited ${count}x ${itemName}. Chest at ${formatPosition(pos)} now contains: ${formatChestContents(chest)}`;
+      } finally {
+        chest.close();
       }
+    }
+  );
 
-      await bot.transfer({
-        window: bot.currentWindow || bot.inventory,
-        itemType: item.type,
-        metadata: null,
-        sourceStart: fromSlot,
-        sourceEnd: fromSlot,
-        destStart: toSlot,
-      } as any);
-
-      return `Transferred ${count}x ${itemName}`;
+  addServerTool(
+    server,
+    bot,
+    "chest-withdraw",
+    "Take items from a chest into the inventory",
+    {
+      x: z.number().describe("Chest X coordinate"),
+      y: z.number().describe("Chest Y coordinate"),
+      z: z.number().describe("Chest Z coordinate"),
+      itemName: z.string().describe("Name of the item to withdraw"),
+      count: z.number().describe("Number of items to withdraw"),
+    },
+    async ({ x, y, z, itemName, count }) => {
+      const pos = new Vec3(x, y, z);
+      const chest = await openChestWithinReach(bot, pos);
+      try {
+        const chestItem = chest.containerItems().find(i => i.name === itemName);
+        if (!chestItem) {
+          throw new Error(`No ${itemName} in chest at ${formatPosition(pos)}. Contents: ${formatChestContents(chest)}`);
+        }
+        await chest.withdraw(chestItem.type, null, count);
+        return `Withdrew ${count}x ${itemName}. Chest at ${formatPosition(pos)} now contains: ${formatChestContents(chest)}`;
+      } finally {
+        chest.close();
+      }
     }
   );
 }
@@ -1413,7 +1377,7 @@ export function registerSurvivalTools(server: McpServer, bot: Bot) {
     async () => {
       const heldItem = bot.heldItem;
       if (!heldItem || !heldItem.name.includes('fishing_rod')) {
-        return `No fishing rod equipped in main hand`;
+        throw new Error(`No fishing rod equipped in main hand`);
       }
 
       await bot.fish();
@@ -1578,12 +1542,17 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
     async ({ positions, timeoutSeconds, allowedMiningToolsToMinedBlocks = {} }) => {
       const digTimeout = timeoutSeconds ?? 3;
       let dugCount = 0;
+      let skippedEmpty = 0;
       let lastError: string | undefined;
 
-      for (let i = 0; i < positions.length; i++) {
-        const { x, y, z } = positions[i];
+      for (const { x, y, z } of positions) {
         const blockPos = new Vec3(x, y, z);
-        const block = bot.blockAt(blockPos)!;
+        const block = bot.blockAt(blockPos);
+
+        if (!block || isBlockEmpty(block)) {
+          skippedEmpty++;
+          continue;
+        }
 
         const result = await tryMiningOneBlock(bot, block, allowedMiningToolsToMinedBlocks, digTimeout, true);
 
@@ -1595,12 +1564,11 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         dugCount++;
       }
 
-      const totalBlocks = positions.length;
-      if (dugCount === totalBlocks) {
-        return `Dug ${dugCount} block${dugCount === 1 ? '' : 's'}`;
-      } else {
-        return `Dug ${dugCount}/${totalBlocks} blocks. Error on block ${dugCount + 1}: ${lastError}`;
+      const skippedMessage = skippedEmpty > 0 ? ` (skipped ${skippedEmpty} already-empty position${skippedEmpty === 1 ? '' : 's'})` : '';
+      if (lastError) {
+        throw new Error(`Dug ${dugCount}/${positions.length - skippedEmpty} blocks${skippedMessage}. Then got error: ${lastError}`);
       }
+      return `Dug ${dugCount} block${dugCount === 1 ? '' : 's'}${skippedMessage}`;
     }
   );
 
@@ -1720,7 +1688,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
       const blocksByName = mcData.blocksByName;
 
       if (!blocksByName[blockType]) {
-        return `Unknown block type: ${blockType}`;
+        throw new Error(`Unknown block type: ${blockType}`);
       }
 
       const blockId = blocksByName[blockType].id;
@@ -1867,7 +1835,7 @@ export function registerBlockTools(server: McpServer, bot: Bot) {
         output += `${typeMarker};${item.type};${item.count};${item.distance.toFixed(1)};(${pos.x},${pos.y},${pos.z})\n`;
       });
 
-      output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider pathfind-and-move-to`
+      output += `\nIf you wanted the blocks adjacent to the bot (e.g if stuck), use show-adjacent-blocks instead. To reach one of these blocks, consider move-horizontally (same height) or the stairs/dig tools (different height).`
 
       return output.trim();
     }
@@ -1985,7 +1953,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         !entity ||
         bot.entity.position.distanceTo(entity.position) > maxDistance
       ) {
-        return `No ${type || "entity"} found within ${maxDistance} blocks to attack`;
+        throw new Error(`No ${type || "entity"} found within ${maxDistance} blocks to attack`);
       }
 
       const entityName = entity.name || entity.type || "entity";
@@ -2010,12 +1978,12 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
 
         // Check if entity is still close enough
         if (bot.entity.position.distanceTo(entity.position) > maxDistance + 2) {
-          return `${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`;
+          throw new Error(`${entityName} moved too far away after ${attackCount} attacks. Try moving closer.`);
         }
       }
 
       if (attackCount >= maxAttacks) {
-        return `Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`;
+        throw new Error(`Attacked ${entityName} ${attackCount} times but it's still alive. It may be too strong or invulnerable.`);
       }
 
       return `Successfully killed ${entityName} with ${attackCount} attacks at position ${formatBotPosition(initialPos)}`;
@@ -2037,7 +2005,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
         : bot.nearestEntity(e => bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType || 'entity'} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType || 'entity'} found within ${maxDistance} blocks`);
       }
 
       await bot.activateEntity(entity);
@@ -2057,13 +2025,13 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
     async ({ entityType, maxDistance }) => {
       const heldItem = bot.heldItem;
       if (!heldItem) {
-        return `No item held in main hand`;
+        throw new Error(`No item held in main hand`);
       }
 
       const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType} found within ${maxDistance} blocks`);
       }
 
       bot.useOn(entity);
@@ -2084,11 +2052,11 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       const entity = bot.nearestEntity(e => e.name === entityType && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No ${entityType} found within ${maxDistance} blocks`;
+        throw new Error(`No ${entityType} found within ${maxDistance} blocks`);
       }
 
       if (bot.entity.vehicle) {
-        return `Already mounted on ${getEntityName(bot.entity.vehicle)}`;
+        throw new Error(`Already mounted on ${getEntityName(bot.entity.vehicle)}`);
       }
 
       bot.mount(entity);
@@ -2125,7 +2093,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
       const entity = bot.nearestEntity(e => e.name === 'villager' && bot.entity.position.distanceTo(e.position) <= maxDistance);
 
       if (!entity) {
-        return `No villager found within ${maxDistance} blocks`;
+        throw new Error(`No villager found within ${maxDistance} blocks`);
       }
 
       const villager = await bot.openVillager(entity);
@@ -2158,7 +2126,7 @@ export function registerEntityTools(server: McpServer, bot: Bot) {
     },
     async ({ tradeIndex, times }) => {
       if (!bot.currentWindow) {
-        return `No villager window open. Use villager-open first`;
+        throw new Error(`No villager window open. Use villager-open first`);
       }
 
       await bot.trade(bot.currentWindow as any, tradeIndex, times);
@@ -2271,17 +2239,53 @@ export function registerGameStateTools(server: McpServer, bot: Bot) {
     }
   );
 
-  // addServerTool(
-  //   server,
-  //   bot,
-  //   "show-adjacent-blocks",
-  //   "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall.",
-  //   {},
-  //   async () => {
-  //     const result = getAdjacentBlocks(bot);
-  //     return result;
-  //   }
-  // );
+  addServerTool(
+    server,
+    bot,
+    "look-around",
+    "Get a full situational snapshot in one call: position, health/food, held item, inventory summary, time of day, nearby entities, and all adjacent blocks. Good first call after spawning or when unsure what's going on.",
+    {},
+    async () => {
+      const { botFeetPosition, botHeadPosition, blockUnderBotFeet } = getBotPosition(bot);
+
+      const heldItem = bot.heldItem;
+      const durability = getEquippedItemDurability(bot);
+      let heldText = heldItem ? `${heldItem.name} (x${heldItem.count})` : 'nothing';
+      if (durability) {
+        heldText += ` [durability ${durability.remaining}/${durability.max}]`;
+      }
+
+      const maxEntityDistance = 16;
+      const entityLines: string[] = [];
+      for (const entityId in bot.entities) {
+        const entity = bot.entities[entityId];
+        if (entity === bot.entity) continue;
+        const distance = bot.entity.position.distanceTo(entity.position);
+        if (distance <= maxEntityDistance) {
+          entityLines.push(`${getEntityName(entity)} at ${formatBotPosition(entity.position)} (${distance.toFixed(1)} blocks away)`);
+        }
+      }
+
+      return `Feet: (${botFeetPosition.x}, ${botFeetPosition.y}, ${botFeetPosition.z}), head: (${botHeadPosition.x}, ${botHeadPosition.y}, ${botHeadPosition.z}), standing on: ${blockUnderBotFeet?.name || 'null'}\n` +
+        `Health: ${bot.health}/20, Food: ${bot.food}/20, Oxygen: ${bot.oxygenLevel}/20, Gamemode: ${bot.game.gameMode}\n` +
+        `Held: ${heldText}\n` +
+        `Inventory: ${getInventorySummary(bot) || 'empty'}\n` +
+        `Time: ${bot.time.timeOfDay}/24000 (${bot.time.isDay ? 'day' : 'night'})\n` +
+        `Entities within ${maxEntityDistance} blocks: ${entityLines.length > 0 ? '\n' + entityLines.join('\n') : 'none'}\n\n` +
+        `Adjacent blocks:\n${getAdjacentBlocks(bot)}`;
+    }
+  );
+
+  addServerTool(
+    server,
+    bot,
+    "show-adjacent-blocks",
+    "Show all blocks directly adjacent to the bot in all horizontal directions and at all height levels (above head, head height, feet height, below feet). The bot is 2 blocks tall. Good first call when stuck.",
+    {},
+    async () => {
+      return getAdjacentBlocks(bot);
+    }
+  );
 }
 
 // ========== Main Application ==========
