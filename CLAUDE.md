@@ -2,8 +2,9 @@
 
 ## How to connect?
 
-- You should have a minecraft mcp server available at mcp__minecraft. If not, let the user know and suggest reconnecting to it.
-- If a change was made to the code, `pnpm run build`, then reconnect the MCP server so it picks up the new capabilities (in Claude Code: `/mcp` -> reconnect; there is no in-game restart tool).
+- Connection config (host/port/username) lives in `.mcp.json` (gitignored, personal — new clone: `cp .mcp.json.example .mcp.json` and set host/port). It launches `node dist/bot.js`, so `pnpm run build` must have run at least once, and the target Minecraft server must be running and reachable (if unsure: `nc -z -w 3 <host> <port>`).
+- You should then have a minecraft mcp server available at mcp__minecraft. If not (or after editing `.mcp.json`): `pnpm run build`, then reconnect via `/mcp` (Claude Code may ask to trust the server). There is no in-game restart tool.
+- After any code change: `pnpm run build` → `/mcp` reconnect, so the server picks up new capabilities.
 
 ## Play style
 

@@ -20,3 +20,6 @@ pids/
 
 # REPL history
 .node_repl_history
+
+# Personal MCP connection config (copy .mcp.json.example, set your host/port)
+.mcp.json
