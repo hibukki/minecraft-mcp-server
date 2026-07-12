@@ -1,16 +1,15 @@
 {
   "mcpServers": {
     "minecraft": {
-      "command": "npx",
+      "command": "node",
       "args": [
-        "-y",
-        ".",
+        "dist/bot.js",
         "--host",
-        "51.13.91.243",
+        "localhost",
         "--port",
-        "25566",
+        "25565",
         "--username",
-        "ClaudeCoderBot"
+        "ClaudeBot"
       ]
     }
   }
